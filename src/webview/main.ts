@@ -68,6 +68,8 @@ interface Pane {
   /** Ticks de 200 ms con salida dentro de la ventana reciente. */
   ticks: number[];
   quietTimer?: number;
+  /** Veces que el usuario movió la vista con la rueda o la barra; distingue su scroll del de la aplicación. */
+  userScroll: number;
 }
 
 const ICONS = {
@@ -335,6 +337,7 @@ function ensurePane(termId: string): Pane {
     lastInput: 0,
     ignoreUntil: 0,
     ticks: [],
+    userScroll: 0,
   };
   panes.set(termId, pane);
   pane.observer.observe(mount);
@@ -380,6 +383,9 @@ function ensurePane(termId: string): Pane {
   term.onResize(({ cols, rows }) => {
     if (pane.started) post({ type: 'resize', termId, cols, rows });
   });
+  for (const type of ['wheel', 'mousedown'] as const) {
+    mount.addEventListener(type, () => { pane.userScroll++; }, { passive: true });
+  }
   term.attachCustomKeyEventHandler(ev => handleKey(pane, ev));
   return pane;
 }
@@ -728,8 +734,44 @@ function scheduleFit(pane: Pane): void {
     pane.fitTimer = undefined;
     if (!pane.opened) return;
     if (pane.mount.clientWidth === 0 || pane.mount.clientHeight === 0) return;
+    const view = readingPosition(pane);
     pane.fit.fit();
+    restoreReadingPosition(pane, view);
   }, FIT_DELAY_MS);
+}
+
+interface ReadingPosition {
+  line: number;
+  stamp: number;
+}
+
+/** Línea que el usuario tiene arriba si está leyendo historial; undefined si está al final. */
+function readingPosition(pane: Pane): ReadingPosition | undefined {
+  const buf = pane.term.buffer.active;
+  if (buf.viewportY >= buf.baseY) return undefined;
+  return { line: buf.viewportY, stamp: pane.userScroll };
+}
+
+/**
+ * xterm 6 devuelve la vista al final con algunas secuencias de borrado que
+ * usan las TUI al repintar (xtermjs/xterm.js#5801), y al cambiar de tamaño.
+ * Con un agente escribiendo, leer historial era imposible: cada frame te
+ * bajaba. Si el usuario no tocó la rueda entre medias, se vuelve a su línea.
+ */
+function restoreReadingPosition(pane: Pane, view: ReadingPosition | undefined): void {
+  if (!view || pane.userScroll !== view.stamp) return;
+  const buf = pane.term.buffer.active;
+  if (buf.viewportY < buf.baseY) return;
+  pane.term.scrollToLine(Math.min(view.line, buf.baseY));
+}
+
+function writeKeepingView(pane: Pane, data: string): void {
+  const view = readingPosition(pane);
+  if (!view) {
+    pane.term.write(data);
+    return;
+  }
+  pane.term.write(data, () => restoreReadingPosition(pane, view));
 }
 
 function fitVisible(): void {
@@ -1638,7 +1680,7 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
     case 'data': {
       const pane = panes.get(msg.termId);
       if (pane) {
-        pane.term.write(msg.data);
+        writeKeepingView(pane, msg.data);
         noteOutput(pane, msg.data);
       }
       break;
