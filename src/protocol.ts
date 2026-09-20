@@ -142,8 +142,12 @@ export type WebviewMessage =
   | { type: 'refreshUsage' }
   /** Directorio que reportó el shell (OSC 7, OSC 9;9 o el título). */
   | { type: 'cwd'; termId: string; cwd: string }
-  /** Cambió el estado de una terminal. `label` es su nombre visible. */
-  | { type: 'activity'; termId: string; state: PaneActivity; label: string; message?: string };
+  /**
+   * Cambió el estado de una terminal. `label` es su nombre visible y `silent`
+   * marca los cambios que el usuario ya está viendo: se pintan igual, pero no
+   * cuentan como espera ni generan aviso.
+   */
+  | { type: 'activity'; termId: string; state: PaneActivity; label: string; message?: string; silent?: boolean };
 
 /** Mensajes que envía el extension host al webview. */
 export type HostMessage =

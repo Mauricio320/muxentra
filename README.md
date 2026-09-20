@@ -93,10 +93,10 @@ Si una fuente no está disponible, ese elemento simplemente no aparece.
 No hace falta configurar nada ni instalar hooks: se deduce de lo que la terminal escribe en pantalla, así que funciona igual con Claude Code, Codex, Gemini CLI, aider, un build o un servidor de desarrollo.
 
 - **Trabajando**: la terminal produce salida de forma sostenida, al menos tres ráfagas en dos segundos. Un agente pensando repinta su indicador varias veces por segundo. El eco de lo que escribes no cuenta.
-- **Listo**: estaba trabajando y lleva `muxentra.quietSeconds` en silencio. Solo se marca si el trabajo duró más de cuatro segundos, para que un `ls` no avise, y solo si no estabas mirando esa terminal.
+- **Listo**: estaba trabajando y lleva `muxentra.quietSeconds` en silencio. Solo se marca si el trabajo duró más de cuatro segundos, para que un `ls` no avise.
 - **Atención**: el programa lo pidió explícitamente, por la campana del terminal o por una secuencia de notificación de escritorio (`OSC 9` o `OSC 777`). La campana que cierra las secuencias de título no cuenta: se usa el parser de xterm, no una búsqueda de texto.
 
-Mirar una terminal la deja en silencio: enfocarla o escribir en ella borra su estado. Nunca se avisa de la terminal que tienes delante.
+La etiqueta sale siempre, pero el aviso y la cuenta de terminales que esperan no: si tenías esa terminal delante cuando cambió de estado, se marca en silencio. Mirar una terminal la deja limpia, y escribir en ella también.
 
 Para que Claude Code toque la campana en cuanto necesita permiso, pon `"preferredNotifChannel": "terminal_bell"` en `~/.claude/settings.json`. Codex hace lo propio con `tui.notifications` en `~/.codex/config.toml`. Sin eso, el estado se sigue detectando por la actividad, solo que el aviso llega cuando el agente calla en vez de en el instante en que pregunta.
 

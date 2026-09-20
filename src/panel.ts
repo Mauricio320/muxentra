@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { normalizeCwd, readGitInfo } from './git';
 import { log } from './log';
@@ -227,13 +228,34 @@ export class MuxentraPanel {
     return out;
   }
 
-  private setActivity(termId: string, state: PaneActivity, label: string, message?: string): void {
+  /**
+   * `silent` viene marcado cuando el usuario estaba mirando esa terminal: el
+   * estado se pinta igual en el panel, pero ni cuenta como espera ni avisa.
+   */
+  private setActivity(termId: string, state: PaneActivity, rawLabel: string, message?: string, silent = false): void {
+    const label = this.shortLabel(termId, rawLabel);
     const previous = this.activity.get(termId)?.state ?? 'idle';
-    if (state === 'idle') this.activity.delete(termId);
-    else this.activity.set(termId, { state, label });
-    if (previous === state) return;
+    const waits = (state === 'done' || state === 'attention') && !silent;
+    if (waits) this.activity.set(termId, { state, label });
+    else this.activity.delete(termId);
+    log().debug(`estado ${label}: ${state}${silent ? ' (mirándola)' : ''}`);
     this.refreshAttention();
-    if (state === 'done' || state === 'attention') this.notify(termId, state, label, message);
+    if (waits && previous !== state) this.notify(termId, state, label, message);
+  }
+
+  /**
+   * Nombre corto para el aviso y la barra de estado. El título que reporta el
+   * shell suele ser una ruta entera ("MINGW64:/c/Users/..."), así que en ese
+   * caso se usa la carpeta de la terminal.
+   */
+  private shortLabel(termId: string, label: string): string {
+    const clean = label.trim();
+    if (clean && clean.length <= 28 && !clean.includes('/') && !clean.includes('\\')) return clean;
+    const cwd = this.cwds.get(termId);
+    const folder = cwd ? path.basename(cwd) : '';
+    if (folder) return folder;
+    if (!clean) return 'Terminal';
+    return clean.length > 28 ? `…${clean.slice(-27)}` : clean;
   }
 
   private clearActivity(termId: string): void {
@@ -368,7 +390,7 @@ export class MuxentraPanel {
         this.setCwd(m.termId, m.cwd);
         break;
       case 'activity':
-        this.setActivity(m.termId, m.state, m.label, m.message);
+        this.setActivity(m.termId, m.state, m.label, m.message, m.silent);
         break;
       case 'layout':
         void this.ctx.workspaceState.update(LAYOUT_KEY, m.layout);

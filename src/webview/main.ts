@@ -540,26 +540,29 @@ function onQuiet(pane: Pane): void {
   pane.ticks = [];
   if (pane.activity !== 'busy') return;
   const worked = pane.lastOutput - pane.busySince;
-  setActivity(pane, worked >= MIN_BUSY_MS && !isWatching(pane) ? 'done' : 'idle');
+  if (worked < MIN_BUSY_MS) {
+    setActivity(pane, 'idle');
+    return;
+  }
+  // Se marca siempre; si el usuario tenía esa terminal delante, sin avisar.
+  setActivity(pane, 'done', undefined, isWatching(pane));
 }
 
 /** La terminal pidió algo explícitamente (campana o secuencia de notificación). */
 function raiseAttention(pane: Pane, message?: string): void {
   if (!statusEnabled()) return;
-  if (isWatching(pane)) return;
-  setActivity(pane, 'attention', message);
-  if (settings.attentionSound) beep();
+  const watching = isWatching(pane);
+  setActivity(pane, 'attention', message, watching);
+  if (settings.attentionSound && !watching) beep();
 }
 
-function setActivity(pane: Pane, next: PaneActivity, message?: string): void {
+function setActivity(pane: Pane, next: PaneActivity, message?: string, silent = false): void {
   if (pane.activity === next) return;
   pane.activity = next;
-  if (next === 'idle' || next === 'busy') {
-    pane.busySince = next === 'busy' ? pane.busySince : 0;
-  }
+  if (next !== 'busy') pane.busySince = 0;
   renderPaneState(pane);
   refreshTabStates();
-  post({ type: 'activity', termId: pane.termId, state: next, label: paneLabel(pane.termId), message });
+  post({ type: 'activity', termId: pane.termId, state: next, label: paneLabel(pane.termId), message, silent });
 }
 
 /** Vuelve a dejar la terminal en silencio cuando el usuario la mira. */
