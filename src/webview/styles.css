@@ -914,25 +914,18 @@ body.pane-dragging * {
   background-color: var(--vscode-terminal-background, var(--vscode-panel-background, var(--vscode-editor-background))) !important;
 }
 
-/* La barra de scroll nativa de la webview es casi invisible; se pinta como la de VS Code. */
-.pane-term .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
+/* xterm 6 trae su propia barra, al estilo VS Code, que se desvanece cuando no se
+   usa. Con un agente escribiendo conviene verla: atenuada en reposo, entera al
+   pasar el ratón. Solo cuando hay historial ("fade"); si no hay nada que
+   desplazar sigue oculta. */
+.pane-term .xterm .xterm-scrollable-element > .scrollbar.invisible.fade {
+  opacity: 0.45;
+  pointer-events: auto;
+  transition: opacity 200ms linear;
 }
 
-.pane-term .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.pane-term .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
-}
-
-.pane-term .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7));
-}
-
-.pane-term .xterm-viewport::-webkit-scrollbar-thumb:active {
-  background: var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4));
+.pane-term:hover .xterm .xterm-scrollable-element > .scrollbar.invisible.fade {
+  opacity: 1;
 }
 
 @media (max-width: 980px) {
