@@ -133,7 +133,8 @@ Worth knowing:
 
 - `muxentra.shellPath` and `muxentra.shellArgs`: an explicit shell. Empty means your default VS Code profile.
 - `muxentra.fontFamily` and `muxentra.fontSize`: when empty they come from `terminal.integrated.*` or `editor.*`.
-- `muxentra.scrollback`: lines of history per terminal.
+- `muxentra.scrollback`: lines of history per terminal. Defaults to 20000, enough to hold a whole Codex transcript.
+- `muxentra.rebuildAwareScrollback`: when a program rewrites its entire transcript right after a resize (Codex does, on every resize), clear that terminal's history before receiving it so a single copy remains instead of one per resize. On by default.
 - `muxentra.showUsage`: show or hide the bottom usage bar.
 - `muxentra.agentStatus`: turn the per-terminal status tracking on or off.
 - `muxentra.notifyOn`: when VS Code notifies you. `all` (the default) on finish and on attention, `attention` only when the program asks for something, `none` never.

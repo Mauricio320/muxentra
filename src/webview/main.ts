@@ -70,6 +70,17 @@ interface Pane {
   quietTimer?: number;
   /** Veces que el usuario movió la vista con la rueda o la barra; distingue su scroll del de la aplicación. */
   userScroll: number;
+  /** Hasta cuándo una ráfaga grande se toma como reescritura de la transcripción (tras resize o reconexión). */
+  rebuildWatchUntil: number;
+  /** Trozos retenidos mientras se decide si la ráfaga es una reescritura. */
+  rebuildHeld: string[];
+  rebuildHeldLines: number;
+  rebuildHoldTimer: number | undefined;
+  /** Esperando a que xterm vacíe su cola antes de limpiar; los trozos siguen reteniéndose. */
+  rebuildClearing: boolean;
+  /** Distancia al final que tenía el usuario al empezar; se recupera cuando la reescritura termina. */
+  rebuildDistance: number | undefined;
+  rebuildQuietTimer: number | undefined;
 }
 
 const ICONS = {
@@ -121,7 +132,8 @@ let settings: TermSettings = {
   lineHeight: 1,
   fontWeight: 'normal',
   fontWeightBold: 'bold',
-  scrollback: 5000,
+  scrollback: 20000,
+  rebuildAwareScrollback: true,
   cursorBlink: true,
   platform: 'linux',
   windowsBuildNumber: 0,
@@ -338,6 +350,13 @@ function ensurePane(termId: string): Pane {
     ignoreUntil: 0,
     ticks: [],
     userScroll: 0,
+    rebuildWatchUntil: 0,
+    rebuildHeld: [],
+    rebuildHeldLines: 0,
+    rebuildHoldTimer: undefined,
+    rebuildClearing: false,
+    rebuildDistance: undefined,
+    rebuildQuietTimer: undefined,
   };
   panes.set(termId, pane);
   pane.observer.observe(mount);
@@ -381,7 +400,9 @@ function ensurePane(termId: string): Pane {
     return false;
   });
   term.onResize(({ cols, rows }) => {
-    if (pane.started) post({ type: 'resize', termId, cols, rows });
+    if (!pane.started) return;
+    armRebuildWatch(pane, REBUILD_WATCH_RESIZE_MS);
+    post({ type: 'resize', termId, cols, rows });
   });
   for (const type of ['wheel', 'mousedown'] as const) {
     mount.addEventListener(type, () => { pane.userScroll++; }, { passive: true });
@@ -774,6 +795,94 @@ function writeKeepingView(pane: Pane, data: string): void {
   pane.term.write(data, () => restoreReadingPosition(pane, view));
 }
 
+// ---------------------------------------------------------------- reescritura tras resize
+
+/**
+ * Codex vuelve a escribir su transcripción completa (miles de líneas) cada
+ * vez que cambia el tamaño de la terminal, sin borrar la copia anterior. Cada
+ * copia empuja la anterior fuera del historial y deja bloques repetidos. Si
+ * justo después de un cambio de tamaño llega una ráfaga de cientos de líneas,
+ * se vacía el historial antes de escribirla, para que quede una sola copia.
+ */
+const REBUILD_WATCH_RESIZE_MS = 2000;
+const REBUILD_WATCH_ATTACH_MS = 4000;
+/** Cuánto se retiene la salida mientras se decide, para no perder el principio de la reescritura. */
+const REBUILD_HOLD_MS = 120;
+/** Líneas seguidas a partir de las que la ráfaga se toma como reescritura. */
+const REBUILD_MIN_LINES = 250;
+/** Silencio tras el que la reescritura se da por terminada. */
+const REBUILD_QUIET_MS = 300;
+
+function armRebuildWatch(pane: Pane, windowMs: number): void {
+  if (!settings.rebuildAwareScrollback) return;
+  const buf = pane.term.buffer.active;
+  pane.rebuildDistance = buf.viewportY < buf.baseY ? buf.baseY - buf.viewportY : undefined;
+  pane.rebuildWatchUntil = Date.now() + windowMs;
+}
+
+function countNewlines(data: string): number {
+  let n = 0;
+  for (let i = data.indexOf('\n'); i !== -1; i = data.indexOf('\n', i + 1)) n++;
+  return n;
+}
+
+/** Devuelve true si se quedó con el trozo; false si hay que escribirlo normalmente. */
+function holdForRebuild(pane: Pane, data: string): boolean {
+  if (pane.rebuildClearing) {
+    pane.rebuildHeld.push(data);
+    return true;
+  }
+  if (pane.rebuildQuietTimer !== undefined) {
+    // Reescritura en curso: pasa directo y se reinicia el detector de silencio.
+    window.clearTimeout(pane.rebuildQuietTimer);
+    pane.rebuildQuietTimer = window.setTimeout(() => settleRebuild(pane), REBUILD_QUIET_MS);
+    return false;
+  }
+  if (Date.now() > pane.rebuildWatchUntil) return false;
+
+  pane.rebuildHeld.push(data);
+  pane.rebuildHeldLines += countNewlines(data);
+  if (pane.rebuildHeldLines >= REBUILD_MIN_LINES) {
+    if (pane.rebuildHoldTimer !== undefined) window.clearTimeout(pane.rebuildHoldTimer);
+    pane.rebuildHoldTimer = undefined;
+    // Fuera la copia vieja antes de recibir la nueva, pero solo cuando xterm haya
+    // parseado lo que ya tenía en cola. La vista sigue al final mientras llega;
+    // al terminar se recupera la distancia que tenía el usuario.
+    pane.rebuildClearing = true;
+    pane.term.write('', () => {
+      pane.rebuildClearing = false;
+      pane.userScroll++;
+      pane.term.clear();
+      flushHeld(pane);
+      pane.rebuildQuietTimer = window.setTimeout(() => settleRebuild(pane), REBUILD_QUIET_MS);
+    });
+    return true;
+  }
+  if (pane.rebuildHoldTimer === undefined) {
+    pane.rebuildHoldTimer = window.setTimeout(() => {
+      // No llegó a ráfaga: era salida normal. Se sigue vigilando hasta que venza la ventana.
+      pane.rebuildHoldTimer = undefined;
+      flushHeld(pane);
+    }, REBUILD_HOLD_MS);
+  }
+  return true;
+}
+
+function flushHeld(pane: Pane): void {
+  const held = pane.rebuildHeld.splice(0);
+  pane.rebuildHeldLines = 0;
+  for (const chunk of held) writeKeepingView(pane, chunk);
+}
+
+function settleRebuild(pane: Pane): void {
+  pane.rebuildQuietTimer = undefined;
+  const distance = pane.rebuildDistance;
+  pane.rebuildDistance = undefined;
+  if (distance === undefined) return;
+  const buf = pane.term.buffer.active;
+  pane.term.scrollToLine(Math.max(0, buf.baseY - distance));
+}
+
 function fitVisible(): void {
   const tab = activeTab();
   if (!tab) return;
@@ -799,12 +908,17 @@ function startPane(termId: string, attach: boolean): void {
   // Al reconectar llega de golpe todo el buffer guardado: no es trabajo nuevo.
   pane.ignoreUntil = Date.now() + REPLAY_GRACE_MS;
   pane.ticks = [];
+  // Al reconectar llegan dos ráfagas: el replay del servidor y, si cambió el
+  // tamaño, la reescritura del programa. La vigilancia cubre las dos.
+  if (attach) armRebuildWatch(pane, REBUILD_WATCH_ATTACH_MS);
   post({ type: attach ? 'attach' : 'spawn', termId, cols, rows });
 }
 
 function disposePane(pane: Pane): void {
   if (pane.quietTimer !== undefined) window.clearTimeout(pane.quietTimer);
   if (pane.fitTimer !== undefined) window.clearTimeout(pane.fitTimer);
+  if (pane.rebuildHoldTimer !== undefined) window.clearTimeout(pane.rebuildHoldTimer);
+  if (pane.rebuildQuietTimer !== undefined) window.clearTimeout(pane.rebuildQuietTimer);
   pane.observer.disconnect();
   pane.term.dispose();
   pane.el.remove();
@@ -1680,8 +1794,8 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
     case 'data': {
       const pane = panes.get(msg.termId);
       if (pane) {
-        writeKeepingView(pane, msg.data);
         noteOutput(pane, msg.data);
+        if (!holdForRebuild(pane, msg.data)) writeKeepingView(pane, msg.data);
       }
       break;
     }

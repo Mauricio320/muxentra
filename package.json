@@ -264,9 +264,14 @@
         },
         "muxentra.scrollback": {
           "type": "number",
-          "default": 5000,
+          "default": 20000,
           "minimum": 100,
           "description": "Líneas de historial que conserva cada terminal."
+        },
+        "muxentra.rebuildAwareScrollback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cuando un programa reescribe toda su transcripción justo después de un cambio de tamaño (Codex lo hace en cada resize), vacía el historial de esa terminal antes de recibirla, para que quede una sola copia en vez de una por cada resize."
         },
         "muxentra.showUsage": {
           "type": "boolean",

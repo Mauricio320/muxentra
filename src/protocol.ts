@@ -44,6 +44,8 @@ export interface TermSettings {
   fontWeight: TerminalFontWeight;
   fontWeightBold: TerminalFontWeight;
   scrollback: number;
+  /** Vaciar el historial cuando un programa reescribe su transcripción entera tras un cambio de tamaño. */
+  rebuildAwareScrollback: boolean;
   cursorBlink: boolean;
   platform: string;
   windowsBuildNumber: number;
