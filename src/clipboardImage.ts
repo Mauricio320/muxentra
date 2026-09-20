@@ -1,6 +1,7 @@
 // Guarda la imagen del portapapeles como archivo dentro del proyecto y devuelve
 // su ruta, para poder pasársela a un CLI que corre dentro de la terminal.
-// Solo Windows: la imagen se lee con System.Windows.Forms.Clipboard.
+// En Windows la imagen se lee con System.Windows.Forms.Clipboard desde
+// PowerShell; en macOS con AppleScript a través de osascript.
 
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
@@ -13,7 +14,7 @@ import { workingDirectory } from './ptyClient';
 
 const DEFAULT_DIR = '.muxentra-img';
 const DEFAULT_MAX = 6;
-const PS_TIMEOUT_MS = 8000;
+const READ_TIMEOUT_MS = 8000;
 
 /** Extensiones que se aceptan cuando el portapapeles trae un archivo en vez de un mapa de bits. */
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
@@ -32,8 +33,8 @@ export interface SavedImage {
  * Devuelve undefined si el portapapeles no trae ninguna imagen.
  */
 export async function saveClipboardImage(): Promise<SavedImage | undefined> {
-  if (process.platform !== 'win32') {
-    throw new Error('pegar imágenes del portapapeles solo está disponible en Windows.');
+  if (process.platform !== 'win32' && process.platform !== 'darwin') {
+    throw new Error('pegar imágenes del portapapeles solo está disponible en Windows y macOS.');
   }
 
   const cfg = vscode.workspace.getConfiguration('muxentra');
@@ -45,7 +46,7 @@ export async function saveClipboardImage(): Promise<SavedImage | undefined> {
   fs.mkdirSync(dir, { recursive: true });
 
   const target = freeName(dir, '.png');
-  const result = await readClipboard(target);
+  const result = process.platform === 'win32' ? await readClipboardWindows(target) : await readClipboardMac(target);
 
   let absolute: string | undefined;
   if (result === 'image') {
@@ -111,7 +112,7 @@ export function safeDirName(raw: string | undefined, root: string): string {
  * Pide la imagen a Windows PowerShell. Devuelve 'image' si la guardó en `dest`,
  * 'file:<ruta>' si el portapapeles traía un archivo, o 'none'.
  */
-function readClipboard(dest: string): Promise<string> {
+function readClipboardWindows(dest: string): Promise<string> {
   const script = `$ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -131,7 +132,7 @@ if ([Windows.Forms.Clipboard]::ContainsImage()) {
     cp.execFile(
       powershellPath(),
       args,
-      { windowsHide: true, timeout: PS_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+      { windowsHide: true, timeout: READ_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err) {
           reject(new Error(firstLine(stderr) || err.message));
@@ -140,6 +141,53 @@ if ([Windows.Forms.Clipboard]::ContainsImage()) {
         resolve(stdout.trim());
       },
     );
+  });
+}
+
+/**
+ * Lo mismo en macOS. AppleScript convierte el portapapeles a PNG ("class PNGf")
+ * y lo escribe; si no hay imagen pero sí un archivo copiado en Finder
+ * ("class furl"), devuelve su ruta. El guion va por la entrada estándar y la
+ * ruta se interpola citada, que en AppleScript se escapa igual que en JSON.
+ */
+function readClipboardMac(dest: string): Promise<string> {
+  const script = `set destPath to ${JSON.stringify(dest)}
+try
+  set imageData to (the clipboard as «class PNGf»)
+on error
+  try
+    return "file:" & (POSIX path of (the clipboard as «class furl»))
+  on error
+    return "none"
+  end try
+end try
+set fileRef to (open for access (POSIX file destPath) with write permission)
+try
+  set eof fileRef to 0
+  write imageData to fileRef
+  close access fileRef
+on error errMsg
+  try
+    close access fileRef
+  end try
+  error errMsg
+end try
+return "image"`;
+
+  return new Promise<string>((resolve, reject) => {
+    const child = cp.execFile(
+      '/usr/bin/osascript',
+      ['-'],
+      { timeout: READ_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error(firstLine(stderr) || err.message));
+          return;
+        }
+        resolve(stdout.trim());
+      },
+    );
+    child.stdin?.end(script, 'utf8');
   });
 }
 

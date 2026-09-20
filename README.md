@@ -13,7 +13,7 @@
 ## Requirements
 
 - VS Code 1.100 or newer. It also runs in Cursor and Windsurf, which are built on the same base.
-- Windows 10 and 11 is where it is tested. On macOS everything works except pasting images. Linux is not supported yet: `node-pty` 1.1.0 ships no prebuilt binary for it and the terminal server never starts.
+- Windows 10 and 11 is where it is used day to day, and macOS is supported as well, image pasting included, with less mileage behind it. Linux is not supported yet: `node-pty` 1.1.0 ships no prebuilt binary for it and the terminal server never starts.
 - The folder has to be trusted. Muxentra opens shells using the workspace configuration, so it does not even activate in Restricted Mode.
 
 ## Installation
@@ -57,7 +57,7 @@ With several agents running at once you do not have to watch them: each terminal
 - Every terminal shows what it is up to: a pulsing blue dot while it works, a green "listo" label when it finishes, an orange "atención" one when the program is asking for something. The dot is repeated on the tab, the number of waiting terminals appears in the panel title and in the VS Code status bar, and a notification offers to take you there. Built for having four agents running and knowing which one needs you.
 - A bottom bar with Claude Code and OpenAI Codex usage: the percentage of each limit window and how long until it resets. Click to refresh.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
-- `Ctrl+Alt+V` pastes images: the clipboard image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent. Windows only.
+- `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS) pastes images: the clipboard image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent.
 - Opening the panel creates a dedicated group on the right and locks it, so files keep opening in the main editor. The position survives a window restore. Unlock it with the VS Code padlock or with the `muxentra.lockEditorGroup` setting.
 - Tabs and their layout are saved per workspace.
 - Shells run in a separate terminal server, a process independent from VS Code. Closing the panel, reloading the window or quitting VS Code does not kill them: when you come back, each terminal reconnects to its process and shows what it had (Claude, Codex, a dev server, whatever was running). If the server is gone (first use, machine reboot), fresh shells are started.
@@ -80,19 +80,19 @@ With several agents running at once you do not have to watch them: each terminal
 | Close terminal | `Ctrl+Shift+W` (and `Ctrl+W` outside the terminal text) | `Cmd+W` |
 | Next / previous terminal | `Ctrl+Alt+→` / `Ctrl+Alt+←` | `Cmd+Alt+→` / `Cmd+Alt+←` |
 | Copy / paste | `Ctrl+Shift+C` / `Ctrl+Shift+V` (also `Ctrl+V`) | `Cmd+C` / `Cmd+V` |
-| Paste image from the clipboard | `Ctrl+Alt+V` | — |
+| Paste image from the clipboard | `Ctrl+Alt+V` | `Cmd+Alt+V` |
 
 "Muxentra: Igualar tamaño de terminales" and "Muxentra: Ir a la terminal que espera" live in the command palette with no default shortcut. Every shortcut can be changed in Keyboard Shortcuts (VS Code adapts them to your keyboard layout).
 
 Closing the last terminal of a tab closes the tab. Middle-clicking a tab closes it.
 
-## Pasting an image into the terminal (Windows)
+## Pasting an image into the terminal
 
 This is for handing a screenshot to an agent running in the terminal, such as Claude Code or Codex: they do not read the clipboard, but they do open a file path, and that is what this shortcut gives them.
 
 1. Copy the image. A screen clipping (`Win+Shift+S`), a "Copy image" from the browser, or a `.png` file copied from Explorer all work.
 2. Click the terminal you want it in.
-3. Press `Ctrl+Alt+V`.
+3. Press `Ctrl+Alt+V`, or `Cmd+Alt+V` on macOS.
 4. The path is typed into the command line, with a trailing space so you can keep writing:
 
    ```
@@ -112,8 +112,8 @@ Worth knowing:
 - Pasting the same image twice does not create two files: the contents are compared and the existing file is reused, with the same path.
 - It never reaches the repository. The folder is ignored by writing `.muxentra-img/` into `.git/info/exclude`, a rule local to your clone: it does not show up in `git status` and nobody else sees it. In a worktree the rule goes into the common `.git`.
 - If the clipboard holds no image, it tells you and creates nothing. `Ctrl+V` and `Ctrl+Shift+V` still paste text as always.
-- Windows only: the image is read with `System.Windows.Forms.Clipboard` from Windows PowerShell, the only one that runs in STA mode. On macOS the shortcut says so and does nothing.
-- `Ctrl+Alt` is AltGr on Spanish and Latin American keyboards, but AltGr+V types no character, so the shortcut costs you nothing: `@`, `{`, `}`, `[`, `]`, `|` and `~` still reach the terminal.
+- How the clipboard is read: on Windows, with `System.Windows.Forms.Clipboard` from Windows PowerShell, the only one that runs in STA mode; on macOS, with AppleScript through `osascript`, which converts the clipboard to PNG and also understands a file copied in Finder. On Linux the shortcut says it is unavailable.
+- On Windows, `Ctrl+Alt` is AltGr on Spanish and Latin American keyboards, but AltGr+V types no character, so the shortcut costs you nothing: `@`, `{`, `}`, `[`, `]`, `|` and `~` still reach the terminal.
 
 ## Settings
 
@@ -140,7 +140,7 @@ Worth knowing:
 - **PowerShell refuses to run the script.** Download the `.vsix` from the release and install it with `code --install-extension`, which does exactly the same thing.
 - **Installed, but nothing shows up.** Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`.
 - **The panel opens but no terminal starts.** Check the Output view, "Muxentra" channel: it says why the shell or the server failed.
-- **`Ctrl+Alt+V` does nothing.** The clipboard holds no image (copy it again), or you are not on Windows.
+- **`Ctrl+Alt+V` does nothing.** The clipboard holds no image (copy it again), or you are on Linux, where it is not supported. On macOS the shortcut is `Cmd+Alt+V`.
 - **Fresh shells started when I reopened VS Code.** The server shuts itself down after five minutes with no live terminals and no open panels; if nothing was running, that is expected.
 - **A shortcut does not respond.** Another extension may be taking it: look it up in Keyboard Shortcuts by typing "muxentra" and reassign it.
 
