@@ -1,6 +1,12 @@
-# Muxentra
+<p align="center">
+  <img src="assets/muxentra-icon.png" width="112" alt="Muxentra">
+</p>
 
-Extensión para VS Code que reúne pestañas, terminales en splits anidados y consumo de asistentes de IA en un solo espacio de trabajo.
+<h1 align="center">Muxentra</h1>
+
+<p align="center">
+  Extensión para VS Code que reúne pestañas, terminales en splits anidados y consumo de asistentes de IA en un solo espacio de trabajo.
+</p>
 
 ![Dos pestañas de Muxentra dentro de VS Code: Claude Code a la izquierda y, a la derecha, Codex y otro Claude Code en splits, con la barra de uso de ambos agentes abajo](docs/panel.png)
 
