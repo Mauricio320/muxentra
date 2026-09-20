@@ -77,6 +77,8 @@ export interface UsageWindow {
   percent: number;
   /** Epoch en segundos en que se reinicia la ventana. */
   resetsAt?: number;
+  /** La ventana ya se reinició después de escribirse el dato: se muestra en cero hasta que llegue uno nuevo. */
+  stale?: boolean;
 }
 
 export interface UsageItem {

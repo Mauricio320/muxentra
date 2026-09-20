@@ -64,13 +64,25 @@ function readClaudeCache(): UsageItem | undefined {
   const updatedAt = cache.updatedAt ? Date.parse(cache.updatedAt) : NaN;
   if (Number.isFinite(updatedAt) && Date.now() - updatedAt > CLAUDE_CACHE_MAX_AGE_MS) return undefined;
 
+  // El cache solo se reescribe cuando la extensión de Claude vuelve a consultar
+  // la API. Si una ventana ya se reinició desde entonces, su porcentaje es de
+  // antes del reinicio y engaña: se muestra en cero y sin cuenta atrás hasta
+  // que llegue un dato nuevo.
+  const nowSec = Date.now() / 1000;
   const windows: UsageWindow[] = [];
-  if (typeof data.utilization5h === 'number') {
-    windows.push({ label: '5h', percent: clamp01(data.utilization5h), resetsAt: data.reset5hAt });
-  }
-  if (typeof data.utilization7d === 'number') {
-    windows.push({ label: '7d', percent: clamp01(data.utilization7d), resetsAt: data.reset7dAt });
-  }
+  const rolled: string[] = [];
+  const add = (label: string, utilization: unknown, resetsAt: unknown): void => {
+    if (typeof utilization !== 'number') return;
+    const reset = typeof resetsAt === 'number' ? resetsAt : undefined;
+    if (reset !== undefined && reset <= nowSec) {
+      windows.push({ label, percent: 0, stale: true });
+      rolled.push(label);
+      return;
+    }
+    windows.push({ label, percent: clamp01(utilization), resetsAt: reset });
+  };
+  add('5h', data.utilization5h, data.reset5hAt);
+  add('7d', data.utilization7d, data.reset7dAt);
   if (windows.length === 0) return undefined;
 
   return {
@@ -78,7 +90,10 @@ function readClaudeCache(): UsageItem | undefined {
     label: 'Claude',
     windows,
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
-    detail: claudeLimitDetail(data.limitStatus),
+    // El aviso de límite acompaña al porcentaje viejo; sin él no dice nada.
+    detail: rolled.length
+      ? `${rolled.join(' y ')} ${rolled.length > 1 ? 'reiniciadas' : 'reiniciada'}`
+      : claudeLimitDetail(data.limitStatus),
   };
 }
 

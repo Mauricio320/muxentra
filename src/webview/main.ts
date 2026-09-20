@@ -1498,7 +1498,7 @@ function renderUsageItem(item: UsageItem): HTMLElement {
   for (const w of item.windows) {
     const percent = Math.round(w.percent * 100);
     const chunk = document.createElement('span');
-    chunk.className = `usage-win ${severity(w.percent)}`;
+    chunk.className = `usage-win ${severity(w.percent)}${w.stale ? ' stale' : ''}`;
 
     const name = document.createElement('span');
     name.className = 'usage-win-label';
@@ -1572,7 +1572,7 @@ function usageTooltip(item: UsageItem): string {
   for (const w of item.windows) {
     const reset = formatReset(w.resetsAt);
     const when = w.resetsAt ? new Date(w.resetsAt * 1000).toLocaleString() : undefined;
-    lines.push(`${w.label}: ${Math.round(w.percent * 100)}%${reset ? ` · se reinicia en ${reset} (${when})` : ''}`);
+    lines.push(`${w.label}: ${Math.round(w.percent * 100)}%${reset ? ` · se reinicia en ${reset} (${when})` : ''}${w.stale ? ' · la ventana ya se reinició; sin dato nuevo todavía' : ''}`);
   }
   if (item.detail) lines.push(item.detail);
   if (item.updatedAt) lines.push(`Dato de ${new Date(item.updatedAt).toLocaleTimeString()}`);

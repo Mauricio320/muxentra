@@ -625,6 +625,11 @@ body.pane-dragging * {
   color: var(--vscode-charts-red, #f14c4c);
 }
 
+.usage-win.stale .usage-bar,
+.usage-win.stale .usage-pct {
+  opacity: 0.55;
+}
+
 .usage-pct {
   min-width: 31px;
   color: var(--vscode-foreground);
@@ -907,6 +912,27 @@ body.pane-dragging * {
 
 .pane-term .xterm-viewport {
   background-color: var(--vscode-terminal-background, var(--vscode-panel-background, var(--vscode-editor-background))) !important;
+}
+
+/* La barra de scroll nativa de la webview es casi invisible; se pinta como la de VS Code. */
+.pane-term .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.pane-term .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
+}
+
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7));
+}
+
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4));
 }
 
 @media (max-width: 980px) {
