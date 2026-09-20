@@ -29,7 +29,7 @@ It grabs the latest release, verifies its hash and installs it into whichever ed
 If you would rather do it by hand, or PowerShell refuses to run the script, download the `.vsix` from the Releases tab and run:
 
 ```
-code --install-extension muxentra-0.2.0.vsix
+code --install-extension muxentra-0.3.0.vsix
 ```
 
 Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and that is it. To confirm it is installed, `code --list-extensions` should list `mauriciotriana.muxentra`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
@@ -201,7 +201,7 @@ and attach the debugger to port 9333. The extension's diagnostics go to the Outp
 
 ```
 npm run package
-gh release create v0.2.0 muxentra-0.2.0.vsix --title v0.2.0 --notes "What changed"
+gh release create v0.3.0 muxentra-0.3.0.vsix --title v0.3.0 --notes "What changed"
 ```
 
 The `install.ps1` at the root always points at the most recent release, so uploading the new `.vsix` and telling people is enough. Bump `version` in `package.json` first: the installer uses `--force` and reinstalls anyway, but without a new number nobody knows which build they have.
