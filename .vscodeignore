@@ -1,0 +1,17 @@
+.vscode/**
+.engram/**
+src/**
+esbuild.mjs
+install.ps1
+tsconfig.json
+package-lock.json
+**/*.map
+**/*.pdb
+**/*.vsix
+node_modules/node-pty/build/**
+node_modules/node-pty/src/**
+node_modules/node-pty/deps/**
+node_modules/node-pty/scripts/**
+node_modules/node-pty/lib/**/*.test.js
+node_modules/node-pty/binding.gyp
+node_modules/node-addon-api/**

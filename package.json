@@ -1,0 +1,354 @@
+{
+  "name": "muxentra",
+  "displayName": "Muxentra",
+  "description": "Terminales múltiples, splits anidados y consumo de IA en un solo espacio de trabajo para VS Code.",
+  "version": "0.2.0",
+  "publisher": "mauriciotriana",
+  "icon": "assets/muxentra-icon.png",
+  "galleryBanner": {
+    "color": "#071510",
+    "theme": "dark"
+  },
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "terminal",
+    "tabs",
+    "split",
+    "muxentra",
+    "ai"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Abre shells con la configuración del workspace, así que solo funciona en carpetas en las que confías."
+    }
+  },
+  "activationEvents": [
+    "onWebviewPanel:muxentra",
+    "onWebviewPanel:orcaTerminals"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "muxentra.open",
+        "title": "Abrir terminales",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.newTab",
+        "title": "Nueva pestaña",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.closeTab",
+        "title": "Cerrar pestaña",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.renameTab",
+        "title": "Renombrar pestaña",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.renamePane",
+        "title": "Renombrar terminal",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.tabColor",
+        "title": "Color de la pestaña",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.nextTab",
+        "title": "Pestaña siguiente",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.prevTab",
+        "title": "Pestaña anterior",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.splitRight",
+        "title": "Dividir terminal a la derecha",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.splitDown",
+        "title": "Dividir terminal abajo",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.closePane",
+        "title": "Cerrar terminal",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.focusNextPane",
+        "title": "Enfocar terminal siguiente",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.focusPrevPane",
+        "title": "Enfocar terminal anterior",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.equalize",
+        "title": "Igualar tamaño de terminales",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.copy",
+        "title": "Copiar selección",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.paste",
+        "title": "Pegar",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.pasteImage",
+        "title": "Pegar imagen del portapapeles",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.focusAttention",
+        "title": "Ir a la terminal que espera",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.killAll",
+        "title": "Cerrar todas las terminales (todas las ventanas)",
+        "category": "Muxentra"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "muxentra.open",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
+      },
+      {
+        "command": "muxentra.newTab",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+t",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.closePane",
+        "key": "ctrl+shift+w",
+        "mac": "cmd+w",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.closePane",
+        "key": "ctrl+w",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals') && !isMac"
+      },
+      {
+        "command": "muxentra.splitRight",
+        "key": "ctrl+\\",
+        "mac": "cmd+\\",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.splitDown",
+        "key": "ctrl+shift+\\",
+        "mac": "cmd+shift+\\",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.nextTab",
+        "key": "ctrl+shift+]",
+        "mac": "cmd+shift+]",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.prevTab",
+        "key": "ctrl+shift+[",
+        "mac": "cmd+shift+[",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.focusNextPane",
+        "key": "ctrl+alt+right",
+        "mac": "cmd+alt+right",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.focusPrevPane",
+        "key": "ctrl+alt+left",
+        "mac": "cmd+alt+left",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.renameTab",
+        "key": "f2",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.renamePane",
+        "key": "shift+f2",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.copy",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+c",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.paste",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+v",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      },
+      {
+        "command": "muxentra.paste",
+        "key": "ctrl+v",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals') && !isMac"
+      },
+      {
+        "command": "muxentra.pasteImage",
+        "key": "ctrl+alt+v",
+        "when": "(activeWebviewPanelId == 'muxentra' || activeWebviewPanelId == 'orcaTerminals')"
+      }
+    ],
+    "configuration": {
+      "title": "Muxentra",
+      "properties": {
+        "muxentra.shellPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Ruta del shell a usar. Vacío: usa el perfil por defecto de VS Code (terminal.integrated.defaultProfile). Solo se puede fijar por máquina o por usuario, nunca desde un repositorio."
+        },
+        "muxentra.shellArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine",
+          "description": "Argumentos para el shell. Solo aplica cuando muxentra.shellPath está definido. Solo se puede fijar por máquina o por usuario, nunca desde un repositorio."
+        },
+        "muxentra.fontFamily": {
+          "type": "string",
+          "default": "",
+          "description": "Fuente de las terminales. Vacío: usa terminal.integrated.fontFamily o editor.fontFamily."
+        },
+        "muxentra.fontSize": {
+          "type": "number",
+          "default": 0,
+          "description": "Tamaño de fuente. 0: usa terminal.integrated.fontSize o editor.fontSize."
+        },
+        "muxentra.scrollback": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 100,
+          "description": "Líneas de historial que conserva cada terminal."
+        },
+        "muxentra.showUsage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Muestra una barra inferior con el uso de Claude Code y de OpenAI Codex, leído de los datos locales de cada herramienta."
+        },
+        "muxentra.agentStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Marca en cada terminal si está trabajando, si terminó o si pide atención, deduciéndolo de su salida. Sirve para Claude Code, Codex y cualquier proceso largo."
+        },
+        "muxentra.notifyOn": {
+          "type": "string",
+          "enum": [
+            "all",
+            "attention",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Avisa cuando una terminal termina y cuando pide atención.",
+            "Avisa solo cuando una terminal pide atención (campana o notificación del programa).",
+            "No muestra avisos; el estado se ve igual en el panel."
+          ],
+          "default": "all",
+          "description": "Cuándo mostrar un aviso de VS Code por una terminal que espera. Nunca avisa de la terminal que estás mirando."
+        },
+        "muxentra.attentionSound": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emite un pitido corto cuando una terminal pide atención."
+        },
+        "muxentra.quietSeconds": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Segundos de silencio tras los que una terminal que estaba trabajando se da por terminada."
+        },
+        "muxentra.showBranch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Muestra la rama de git en la cabecera de cada terminal, según el directorio en que esté. Detecta worktrees."
+        },
+        "muxentra.lockEditorGroup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Bloquea el grupo de editores al abrir el panel, para que los archivos no se abran encima de las terminales. Se puede desbloquear con el candado de VS Code."
+        },
+        "muxentra.usageRefreshSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 15,
+          "description": "Cada cuántos segundos se relee el uso mientras el panel está visible."
+        },
+        "muxentra.imagePasteDir": {
+          "type": "string",
+          "default": ".muxentra-img",
+          "description": "Carpeta, relativa a la raíz del workspace, donde se guardan las imágenes pegadas con Ctrl+Alt+V. Se ignora en .git/info/exclude, así que no llega al repositorio."
+        },
+        "muxentra.imagePasteMax": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "description": "Cuántas imágenes pegadas se conservan. Al superar el límite se borran las más antiguas."
+        },
+        "muxentra.multiLinePasteWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pide confirmación antes de pegar un texto de varias líneas, que el shell ejecutaría de inmediato sin darte tiempo a leerlo."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit -p ./",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.100.0",
+    "@vscode/vsce": "^4.0.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "6.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.0"
+  }
+}
