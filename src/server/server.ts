@@ -34,6 +34,9 @@ interface Term {
   chunks: string[];
   size: number;
   owner: Conn | null;
+  /** Último tamaño aplicado al pty, para no repetir un resize que no cambia nada. */
+  cols: number;
+  rows: number;
 }
 
 const terms = new Map<string, Term>();
@@ -253,13 +256,15 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     return;
   }
   kill(msg.id);
+  const cols = size(msg.cols, 80, 2);
+  const rows = size(msg.rows, 24, 1);
   let proc: IPty;
   try {
     const pty = require('node-pty') as typeof import('node-pty');
     proc = pty.spawn(msg.file, msg.args, {
       name: 'xterm-256color',
-      cols: size(msg.cols, 80, 2),
-      rows: size(msg.rows, 24, 1),
+      cols,
+      rows,
       cwd: msg.cwd,
       env: msg.env,
     });
@@ -269,7 +274,7 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     conn.send({ t: 'spawnError', id: msg.id, message });
     return;
   }
-  const term: Term = { proc, chunks: [], size: 0, owner: conn };
+  const term: Term = { proc, chunks: [], size: 0, owner: conn, cols, rows };
   terms.set(msg.id, term);
   exitedWithoutOwner.delete(msg.id);
   log(`spawn ${msg.id}: pid ${proc.pid} ${msg.file} ${msg.args.join(' ')}`);
@@ -299,9 +304,17 @@ function size(value: unknown, fallback: number, min: number): number {
   return Math.max(min, Math.min(5000, Math.floor(value)));
 }
 
-function resize(term: Term, cols: unknown, rows: unknown): void {
+function resize(term: Term, rawCols: unknown, rawRows: unknown): void {
+  const cols = size(rawCols, 80, 2);
+  const rows = size(rawRows, 24, 1);
+  // Un resize al mismo tamaño manda igual un SIGWINCH, y las TUI de los agentes
+  // responden repintando el marco entero. Al reconectar eso dejaba una copia
+  // del último frame justo debajo del historial que se acababa de reproducir.
+  if (cols === term.cols && rows === term.rows) return;
+  term.cols = cols;
+  term.rows = rows;
   try {
-    term.proc.resize(size(cols, 80, 2), size(rows, 24, 1));
+    term.proc.resize(cols, rows);
   } catch {
     // Proceso terminando.
   }

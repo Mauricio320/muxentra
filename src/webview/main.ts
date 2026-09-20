@@ -51,7 +51,7 @@ interface Pane {
   observer: ResizeObserver;
   opened: boolean;
   started: boolean;
-  fitPending: boolean;
+  fitTimer: number | undefined;
   rendererStarted: boolean;
   /** Último título reportado por el shell; el nombre manual tiene prioridad. */
   autoTitle: string;
@@ -325,7 +325,7 @@ function ensurePane(termId: string): Pane {
     observer: new ResizeObserver(() => scheduleFit(pane)),
     opened: false,
     started: false,
-    fitPending: false,
+    fitTimer: undefined,
     rendererStarted: false,
     autoTitle: '',
     lastCwd: '',
@@ -714,15 +714,22 @@ function beginPaneRename(termId: string): void {
   input.select();
 }
 
+/**
+ * Espera a que el arrastre pare antes de recalcular el tamaño. Cada cambio de
+ * columnas hace que xterm rehaga el ajuste de líneas de todo el historial y que
+ * la TUI del agente repinte; a un ajuste por fotograma, arrastrar un divisor
+ * deja el scrollback lleno de fragmentos repetidos.
+ */
+const FIT_DELAY_MS = 120;
+
 function scheduleFit(pane: Pane): void {
-  if (pane.fitPending) return;
-  pane.fitPending = true;
-  requestAnimationFrame(() => {
-    pane.fitPending = false;
+  if (pane.fitTimer !== undefined) window.clearTimeout(pane.fitTimer);
+  pane.fitTimer = window.setTimeout(() => {
+    pane.fitTimer = undefined;
     if (!pane.opened) return;
     if (pane.mount.clientWidth === 0 || pane.mount.clientHeight === 0) return;
     pane.fit.fit();
-  });
+  }, FIT_DELAY_MS);
 }
 
 function fitVisible(): void {
@@ -755,6 +762,7 @@ function startPane(termId: string, attach: boolean): void {
 
 function disposePane(pane: Pane): void {
   if (pane.quietTimer !== undefined) window.clearTimeout(pane.quietTimer);
+  if (pane.fitTimer !== undefined) window.clearTimeout(pane.fitTimer);
   pane.observer.disconnect();
   pane.term.dispose();
   pane.el.remove();
