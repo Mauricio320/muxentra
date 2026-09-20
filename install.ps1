@@ -8,12 +8,8 @@
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# Cambia esto por tu repositorio, o define $env:MUXENTRA_REPO antes de ejecutar.
+# Repositorio de donde se baja. Se puede apuntar a otro con $env:MUXENTRA_REPO.
 $repo = if ($env:MUXENTRA_REPO) { $env:MUXENTRA_REPO } else { 'Mauricio320/muxentra' }
-
-if ($repo -like 'Mauricio320/*') {
-  throw "El instalador todavía apunta al repositorio de ejemplo '$repo'. Edita la variable `$repo en install.ps1 o define `$env:MUXENTRA_REPO con tu usuario y repositorio."
-}
 
 function Find-Editor {
   foreach ($name in 'code', 'code-insiders', 'cursor', 'windsurf') {
