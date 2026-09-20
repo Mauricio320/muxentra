@@ -3,6 +3,7 @@
 src/**
 esbuild.mjs
 install.ps1
+docs/**
 tsconfig.json
 package-lock.json
 **/*.map

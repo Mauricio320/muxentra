@@ -10,6 +10,14 @@
     "theme": "dark"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mauricio320/muxentra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Mauricio320/muxentra/issues"
+  },
+  "homepage": "https://github.com/Mauricio320/muxentra#readme",
   "private": true,
   "engines": {
     "vscode": "^1.100.0"
