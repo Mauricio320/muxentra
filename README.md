@@ -18,21 +18,35 @@
 
 ## Installation
 
-On Windows, from PowerShell:
+Muxentra is not on the Marketplace: it is installed from the [latest release](https://github.com/Mauricio320/muxentra/releases/latest).
+
+### Windows
+
+From PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex
 ```
 
-It grabs the latest release, verifies its hash and installs it into whichever editor it finds (`code`, Insiders, Cursor or Windsurf). The same command updates it later: an extension installed from a `.vsix` does not update itself.
+It grabs the latest release, checks the SHA256 that GitHub publishes for it, and installs it into whichever editor it finds (`code`, Insiders, Cursor or Windsurf). Run the same command later to update: an extension installed from a `.vsix` does not update itself.
 
-If you would rather do it by hand, or PowerShell refuses to run the script, download the `.vsix` from the Releases tab and run:
+### macOS
 
+Three commands: resolve the latest `.vsix`, download it, install it.
+
+```bash
+url=$(curl -s https://api.github.com/repos/Mauricio320/muxentra/releases/latest | grep -o '"browser_download_url": *"[^"]*\.vsix"' | head -1 | cut -d'"' -f4)
+curl -L -o /tmp/muxentra.vsix "$url"
+code --install-extension /tmp/muxentra.vsix
 ```
-code --install-extension muxentra-0.3.0.vsix
-```
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and that is it. To confirm it is installed, `code --list-extensions` should list `mauriciotriana.muxentra`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
+### Without the command line
+
+Download the `.vsix` from the release page, open the Extensions view, and use "Install from VSIX…" in the `...` menu at the top of the view.
+
+### After installing
+
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.3.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
