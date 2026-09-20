@@ -156,7 +156,7 @@ Worth knowing:
 - **The panel opens but no terminal starts.** Check the Output view, "Muxentra" channel: it says why the shell or the server failed.
 - **`Ctrl+Alt+V` does nothing.** The clipboard holds no image (copy it again), or you are on Linux, where it is not supported. On macOS the shortcut is `Cmd+Alt+V`.
 - **Fresh shells started when I reopened VS Code.** The server shuts itself down after five minutes with no live terminals and no open panels; if nothing was running, that is expected.
-- **I cannot scroll up while Codex is running.** Codex draws on the terminal's alternate screen, which has no scrollback by design, so the wheel and Shift+PageUp have nothing to move; the transcript only exists inside Codex. Start it with `codex --no-alt-screen` and it writes to the normal buffer instead, where the history scrolls like any other command output.
+- **I cannot scroll up while Codex is answering.** Codex renders the answer it is writing inside its own area of the screen and only hands it to the terminal history once the turn is committed. Until then, press Ctrl+T inside Codex to open its transcript and scroll there; afterwards the plain mouse wheel scrolls the terminal history as usual. Do not hold Shift: in a webview that turns the wheel into a horizontal scroll and nothing moves.
 - **A shortcut does not respond.** Another extension may be taking it: look it up in Keyboard Shortcuts by typing "muxentra" and reassign it.
 
 If something really breaks, open an issue with whatever the Output > "Muxentra" channel says.
