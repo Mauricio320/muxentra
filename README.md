@@ -30,6 +30,12 @@ irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | ie
 
 It grabs the latest release, checks the SHA256 that GitHub publishes for it, and installs it into whichever editor it finds (`code`, Insiders, Cursor or Windsurf). Run the same command later to update: an extension installed from a `.vsix` does not update itself.
 
+`irm` and `iex` are PowerShell built-ins, so that line fails with `command not found` in Git Bash, WSL or cmd. From Git Bash, call PowerShell instead:
+
+```bash
+powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex"
+```
+
 ### macOS
 
 Three commands: resolve the latest `.vsix`, download it, install it.
@@ -46,7 +52,7 @@ Download the `.vsix` from the release page, open the Extensions view, and use "I
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.3.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.4.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
