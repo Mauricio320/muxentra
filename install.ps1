@@ -2,6 +2,10 @@
 #
 #   irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex
 #
+# Esa línea es de PowerShell. Desde Git Bash o cmd hay que llamarlo a él:
+#
+#   powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex"
+#
 # El mismo comando sirve para actualizar: siempre toma el release más reciente.
 # Con $env:MUXENTRA_REPO se puede apuntar a otro repositorio sin editar el archivo.
 

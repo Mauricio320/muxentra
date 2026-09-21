@@ -22,19 +22,29 @@ Muxentra is not on the Marketplace: it is installed from the [latest release](ht
 
 ### Windows
 
-From PowerShell:
+One line, but which one depends on the terminal you are standing in. All of them do the same thing: grab the latest release, check the SHA256 that GitHub publishes for it, and install it into whichever editor they find (`code`, Insiders, Cursor or Windsurf).
+
+PowerShell (including the VS Code integrated terminal on its default profile):
 
 ```powershell
 irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex
 ```
 
-It grabs the latest release, checks the SHA256 that GitHub publishes for it, and installs it into whichever editor it finds (`code`, Insiders, Cursor or Windsurf). Run the same command later to update: an extension installed from a `.vsix` does not update itself.
-
-`irm` and `iex` are PowerShell built-ins, so that line fails with `command not found` in Git Bash, WSL or cmd. From Git Bash, call PowerShell instead:
+Git Bash, MSYS2 or any bash on Windows:
 
 ```bash
 powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex"
 ```
+
+cmd:
+
+```bat
+powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 | iex"
+```
+
+`irm` and `iex` are PowerShell built-ins, which is why the short line answers `command not found` anywhere else and the other shells call PowerShell themselves.
+
+WSL is not one of these. Run the installer from Windows instead: inside a WSL window VS Code loads Muxentra on the Linux side, and `node-pty` 1.1.0 ships no prebuilt binary for Linux.
 
 ### macOS
 
@@ -49,6 +59,19 @@ code --install-extension /tmp/muxentra.vsix
 ### Without the command line
 
 Download the `.vsix` from the release page, open the Extensions view, and use "Install from VSIX…" in the `...` menu at the top of the view.
+
+### Updating
+
+An extension installed from a `.vsix` never updates itself, so updating means running the install command again. It always resolves the latest release, so there is nothing to edit between versions.
+
+| Where you are | Command |
+| --- | --- |
+| PowerShell | `irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 \| iex` |
+| Git Bash | `powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 \| iex"` |
+| cmd | `powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Mauricio320/muxentra/main/install.ps1 \| iex"` |
+| macOS | the three commands in the macOS section above |
+
+Reload the window afterwards, and close any Muxentra terminal still open if you want the new terminal server to take over: reloading the extension alone does not replace that process.
 
 ### After installing
 
