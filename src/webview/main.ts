@@ -141,6 +141,7 @@ let theme: ITheme = buildTheme();
 const tabbarEl = document.getElementById('tabbar') as HTMLElement;
 const contentEl = document.getElementById('content') as HTMLElement;
 const usageEl = document.getElementById('usage') as HTMLElement;
+const usagePopoverEl = document.getElementById('usage-popover') as HTMLElement;
 
 // ---------------------------------------------------------------- estado
 
@@ -1099,6 +1100,11 @@ window.addEventListener(
       ev.preventDefault();
       ev.stopPropagation();
       closeTabMenu();
+    } else if (openUsageId) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openUsageId = null;
+      renderUsagePopover();
     }
   },
   true,
@@ -1521,6 +1527,7 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
 
 let showUsage = true;
 let usageSnapshot: UsageSnapshot | null = null;
+let openUsageId: UsageItem['id'] | null = null;
 
 /** "2h 13m", "3d 22h" o "ahora" para el momento en que se reinicia una ventana. */
 function formatReset(resetsAt: number | undefined): string | undefined {
@@ -1544,6 +1551,8 @@ function severity(percent: number): string {
 function renderUsage(snapshot: UsageSnapshot | null): void {
   usageSnapshot = snapshot;
   if (!showUsage) {
+    openUsageId = null;
+    renderUsagePopover();
     usageEl.hidden = true;
     usageEl.replaceChildren();
     fitVisible();
@@ -1560,12 +1569,18 @@ function renderUsage(snapshot: UsageSnapshot | null): void {
   const spacer = document.createElement('span');
   spacer.className = 'usage-spacer';
   usageEl.replaceChildren(...items.map(renderUsageItem), spacer, renderUsageRefresh(snapshot?.updatedAt));
+  renderUsagePopover();
   fitVisible();
 }
 
-function renderUsageItem(item: UsageItem): HTMLElement {
-  const el = document.createElement('div');
+function renderUsageItem(item: UsageItem): HTMLButtonElement {
+  const el = document.createElement('button');
+  el.type = 'button';
   el.className = `usage-item ${item.id}`;
+  el.dataset.provider = item.id;
+  el.setAttribute('aria-controls', 'usage-popover');
+  el.setAttribute('aria-expanded', String(openUsageId === item.id));
+  el.setAttribute('aria-label', `Ver detalle de uso de ${item.label}`);
   el.style.setProperty('--usage-brand', item.id === 'claude' ? '#e07a5f' : '#22c55e');
 
   const provider = document.createElement('span');
@@ -1643,7 +1658,75 @@ function renderUsageItem(item: UsageItem): HTMLElement {
   }
 
   el.title = usageTooltip(item);
+  el.addEventListener('click', () => {
+    openUsageId = openUsageId === item.id ? null : item.id;
+    renderUsagePopover();
+  });
   return el;
+}
+
+function renderUsagePopover(): void {
+  const item = usageSnapshot?.items.find(value => value.id === openUsageId);
+  usagePopoverEl.hidden = !item || !showUsage;
+  usagePopoverEl.replaceChildren();
+  for (const button of usageEl.querySelectorAll<HTMLButtonElement>('.usage-item')) {
+    button.setAttribute('aria-expanded', String(button.dataset.provider === openUsageId));
+  }
+  if (!item || !showUsage) return;
+
+  const trigger = usageEl.querySelector<HTMLElement>(`[data-provider="${item.id}"]`);
+  const app = document.getElementById('app') as HTMLElement;
+  if (trigger) usagePopoverEl.style.left = `${Math.max(8, Math.min(trigger.offsetLeft, app.clientWidth - 328))}px`;
+
+  const header = document.createElement('div');
+  header.className = 'usage-popover-header';
+  const heading = document.createElement('strong');
+  heading.textContent = item.label;
+  const age = document.createElement('span');
+  age.textContent = item.updatedAt
+    ? `Dato de ${new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : 'Sin lectura reciente';
+  header.append(heading, age);
+  usagePopoverEl.append(header);
+
+  for (const window of item.windows) {
+    const row = document.createElement('div');
+    row.className = `usage-popover-row ${window.percent === undefined ? 'pending' : severity(window.percent)}${window.stale ? ' stale' : ''}`;
+    const top = document.createElement('div');
+    top.className = 'usage-popover-row-head';
+    const name = document.createElement('span');
+    name.textContent = window.label === '5h' ? 'Sesión' : window.label === '7d' ? 'Semanal' : window.label;
+    const value = document.createElement('strong');
+    value.textContent = window.percent === undefined ? 'Pendiente' : `${Math.round(window.percent * 100)}%`;
+    top.append(name, value);
+    const bar = document.createElement('div');
+    bar.className = 'usage-popover-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', `${item.label}, ${name.textContent}`);
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    if (window.percent !== undefined) bar.setAttribute('aria-valuenow', String(Math.round(window.percent * 100)));
+    else bar.setAttribute('aria-valuetext', 'Pendiente de datos');
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.round((window.percent ?? 0) * 100)}%`;
+    bar.append(fill);
+    row.append(top, bar);
+    const reset = formatReset(window.resetsAt);
+    if (reset || window.stale) {
+      const note = document.createElement('span');
+      note.className = 'usage-popover-note';
+      note.textContent = window.stale ? 'Sin actualizar' : `Se reinicia en ${reset}`;
+      row.append(note);
+    }
+    usagePopoverEl.append(row);
+  }
+  if (!item.windows.length || item.detail) {
+    const note = document.createElement('div');
+    note.className = 'usage-popover-empty';
+    note.textContent = item.detail ?? 'Sin datos de cuota';
+    usagePopoverEl.append(note);
+  }
+  usagePopoverEl.append(renderUsageRefresh(usageSnapshot?.updatedAt));
 }
 
 function renderUsageRefresh(updatedAt: number | undefined): HTMLButtonElement {
@@ -1682,7 +1765,13 @@ function usageTooltip(item: UsageItem): string {
   return lines.join('\n');
 }
 
-usageEl.addEventListener('click', () => post({ type: 'refreshUsage' }));
+document.addEventListener('mousedown', ev => {
+  if (!openUsageId) return;
+  const target = ev.target as Node;
+  if (usagePopoverEl.contains(target) || usageEl.contains(target)) return;
+  openUsageId = null;
+  renderUsagePopover();
+});
 
 // ---------------------------------------------------------------- mensajes del host
 

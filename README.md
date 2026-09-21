@@ -75,7 +75,7 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.5.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.6.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -196,9 +196,9 @@ If something really breaks, open an issue with whatever the Output > "Muxentra" 
 Usage is read from local files, with no network calls and no credentials.
 
 - **Codex**: the last `rate_limits` event in a recent session file under `~/.codex/sessions`. Up to 12 recent files are checked, so opening a session that has not reported its limits yet does not hide the previous reading. The displayed source time comes from the event, not an unrelated file update.
-- **Claude**: run `Muxentra: Conectar el uso actual de Claude` once to receive the native `statusLine.rate_limits` data (Claude Code 2.1.251+). The command backs up `~/.claude/settings.json` and adds a local bridge while preserving the existing status line and its input. The bridge writes only percentages and reset times to `~/.claude/muxentra-usage.json`; it does not retain session paths or prompts. Native limits arrive after Claude's first API response. Muxentra also reads `cachedUsageUtilization` from `~/.claude.json` (refreshed by `/usage`) and the older `~/.claude/vscode-claude-status-cache.json`, preferring the most recent observation. Readings older than 12 hours are marked "Sin actualizar"; expired windows stay pending until a new reading arrives. Local transcript tokens are only a tooltip fallback, never a percentage of the plan.
+- **Claude**: run `Muxentra: Conectar el uso actual de Claude` once to receive the native `statusLine.rate_limits` data (Claude Code 2.1.251+). The command backs up `~/.claude/settings.json` and adds a local bridge while preserving the existing status line and its input. The bridge writes only percentages and reset times to `~/.claude/muxentra-usage.json`; it does not retain session paths or prompts. Native limits arrive after Claude's first API response. Muxentra also reads `cachedUsageUtilization` from `~/.claude.json` (refreshed by `/usage`) and the older `~/.claude/vscode-claude-status-cache.json`. The `/usage` limits take precedence for each quota, including named model limits; other sources fill missing or expired windows. Readings older than 12 hours are marked "Sin actualizar"; expired windows stay pending until a new reading arrives. Local transcript tokens are only a tooltip fallback, never a percentage of the plan.
 
-Both indicators reserve their place as soon as the panel opens. Missing quota readings show "Sin datos de cuota" and a neutral bar. The refresh button re-reads local files; "Consultado" is the read time, not a claim that the provider refreshed its data. Entering a command or completing a task also schedules a read, in addition to the configured interval.
+Both indicators reserve their place as soon as the panel opens. Click a provider card to see its full quota bars, reset times and source time. Missing quota readings show "Sin datos de cuota" and a neutral bar. The refresh button re-reads local files; "Consultado" is the read time, not a claim that the provider refreshed its data. Entering a command or completing a task also schedules a read, in addition to the configured interval.
 
 ## How it knows whether a terminal is working, done, or asking for you
 

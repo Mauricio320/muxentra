@@ -40,13 +40,32 @@ interface ClaudeCache {
     utilization7d?: number;
     reset5hAt?: number;
     reset7dAt?: number;
+    scoped?: { label: string; utilization: number; resetsAt?: number }[];
     limitStatus?: string;
+  };
+}
+
+interface ClaudeNativeLimit {
+  kind?: string;
+  percent?: number;
+  resets_at?: string;
+  scope?: { model?: { display_name?: string } };
+}
+
+interface ClaudeNativeUsage {
+  fetchedAtMs?: number;
+  utilization?: {
+    five_hour?: { utilization?: number; resets_at?: string };
+    seven_day?: { utilization?: number; resets_at?: string };
+    limits?: ClaudeNativeLimit[];
   };
 }
 
 function readClaude(home: string): UsageItem | undefined {
   const sources: UsageItem[] = [];
-  for (const read of [readClaudeStatusline, readClaudeNativeCache, readClaudeCache]) {
+  // /usage conserva las mismas ventanas y nombres que muestra Claude. Las
+  // cabeceras del statusLine pueden ser parciales o diferir en el redondeo.
+  for (const read of [readClaudeNativeCache, readClaudeStatusline, readClaudeCache]) {
     try {
       const item = read(home);
       if (item) sources.push(item);
@@ -54,8 +73,27 @@ function readClaude(home: string): UsageItem | undefined {
       // Una fuente puede estar a medio escribir sin invalidar las demás.
     }
   }
-  sources.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  return sources[0] ?? readClaudeTokens(home);
+  if (!sources.length) return readClaudeTokens(home);
+  const windows = new Map<string, UsageWindow>();
+  let selectedAt: number | undefined;
+  for (const source of sources) {
+    for (const window of source.windows) {
+      const previous = windows.get(window.label);
+      // Las fuentes de respaldo completan ventanas ausentes o caducadas;
+      // nunca reemplazan una lectura válida de /usage por una cabecera parcial.
+      if (!previous || (previous.stale && !window.stale && window.percent !== undefined)) {
+        windows.set(window.label, window);
+        selectedAt = Math.max(selectedAt ?? 0, source.updatedAt ?? 0);
+      }
+    }
+  }
+  const merged = [...windows.values()];
+  return {
+    id: 'claude', label: 'Claude', windows: merged,
+    updatedAt: selectedAt || undefined,
+    detail: merged.every(window => window.stale || window.percent === undefined)
+      ? 'Sin actualizar' : sources[0].detail === 'Sin actualizar' ? undefined : sources[0].detail,
+  };
 }
 
 /**
@@ -81,19 +119,31 @@ function readClaudeNativeCache(home: string): UsageItem | undefined {
   const file = home === CLAUDE_HOME
     ? path.join(os.homedir(), '.claude.json') : path.join(home, '.claude.json');
   if (!fs.existsSync(file)) return undefined;
-  const data = JSON.parse(fs.readFileSync(file, 'utf8')).cachedUsageUtilization;
-  if (!data || !Number.isFinite(data.fetchedAtMs)) return undefined;
-  const five = data.utilization?.five_hour;
-  const week = data.utilization?.seven_day;
+  const data = JSON.parse(fs.readFileSync(file, 'utf8')).cachedUsageUtilization as ClaudeNativeUsage | undefined;
+  if (!data || typeof data.fetchedAtMs !== 'number' || !Number.isFinite(data.fetchedAtMs)) return undefined;
+  const usage = data.utilization;
+  const limits = Array.isArray(usage?.limits) ? usage.limits : [];
+  const session = limits.find(limit => limit?.kind === 'session');
+  const weekly = limits.find(limit => limit?.kind === 'weekly_all');
   const percent = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isFinite(value) ? value / 100 : undefined;
   const reset = (value: unknown): number | undefined =>
     typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) / 1000 : undefined;
+  const scoped = limits.flatMap(limit => {
+    if (limit?.kind !== 'weekly_scoped') return [];
+    const label = limit.scope?.model?.display_name;
+    const utilization = percent(limit.percent);
+    if (typeof label !== 'string' || !label.trim() || utilization === undefined) return [];
+    return [{ label: label.trim(), utilization, resetsAt: reset(limit.resets_at) }];
+  });
   return claudeCacheItem({
     updatedAt: new Date(data.fetchedAtMs).toISOString(),
     usageData: {
-      utilization5h: percent(five?.utilization), reset5hAt: reset(five?.resets_at),
-      utilization7d: percent(week?.utilization), reset7dAt: reset(week?.resets_at),
+      utilization5h: percent(session?.percent ?? usage?.five_hour?.utilization),
+      reset5hAt: reset(session?.resets_at ?? usage?.five_hour?.resets_at),
+      utilization7d: percent(weekly?.percent ?? usage?.seven_day?.utilization),
+      reset7dAt: reset(weekly?.resets_at ?? usage?.seven_day?.resets_at),
+      scoped,
     },
   });
 }
@@ -124,6 +174,7 @@ function claudeCacheItem(cache: ClaudeCache): UsageItem | undefined {
   };
   add('5h', data.utilization5h, data.reset5hAt);
   add('7d', data.utilization7d, data.reset7dAt);
+  for (const scoped of data.scoped ?? []) add(scoped.label, scoped.utilization, scoped.resetsAt);
   if (windows.length === 0) return undefined;
 
   return {

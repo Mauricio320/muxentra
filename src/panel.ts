@@ -512,6 +512,7 @@ export class MuxentraPanel {
   <div id="app">
     <div id="tabbar"></div>
     <div id="content"></div>
+    <div id="usage-popover" hidden></div>
     <div id="usage" hidden></div>
   </div>
   <script nonce="${nonce}" src="${script}"></script>

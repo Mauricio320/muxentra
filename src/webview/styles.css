@@ -18,6 +18,7 @@ body {
 #app {
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 /* ---------- barra de pestañas ---------- */
@@ -522,6 +523,21 @@ body.pane-dragging * {
   border: 1px solid color-mix(in srgb, var(--usage-brand) 28%, var(--vscode-widget-border, transparent));
   border-radius: 7px;
   box-shadow: inset 2px 0 0 var(--usage-brand), 0 1px 2px rgba(0, 0, 0, 0.14);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.usage-item:hover,
+.usage-item[aria-expanded="true"] {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+  border-color: color-mix(in srgb, var(--usage-brand) 55%, var(--vscode-widget-border, transparent));
+}
+
+.usage-item:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
 }
 
 .usage-provider {
@@ -726,6 +742,97 @@ body.pane-dragging * {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.35;
+}
+
+#usage-popover {
+  position: absolute;
+  z-index: 30;
+  bottom: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, calc(100% - 16px));
+  max-height: min(500px, calc(100% - 90px));
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  border-radius: 10px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
+}
+
+#usage-popover[hidden] {
+  display: none;
+}
+
+.usage-popover-header,
+.usage-popover-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-popover-header {
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
+}
+
+.usage-popover-header strong {
+  font-size: 12px;
+}
+
+.usage-popover-header span,
+.usage-popover-note,
+.usage-popover-empty {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.usage-popover-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--vscode-charts-green, #23d18b);
+}
+
+.usage-popover-row.warn { color: var(--vscode-charts-yellow, #e8a33d); }
+.usage-popover-row.crit { color: var(--vscode-charts-red, #f14c4c); }
+.usage-popover-row.pending { color: var(--vscode-descriptionForeground); }
+
+.usage-popover-row-head {
+  color: var(--vscode-foreground);
+  font-size: 12px;
+}
+
+.usage-popover-row-head strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-popover-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-foreground) 17%, transparent);
+}
+
+.usage-popover-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+}
+
+.usage-popover-row.stale .usage-popover-bar i {
+  opacity: 0.55;
+}
+
+#usage-popover .usage-refresh {
+  align-self: flex-start;
+  height: 25px;
+  margin-top: 2px;
 }
 
 .pane.active .pane-header {

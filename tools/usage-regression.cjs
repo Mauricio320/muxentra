@@ -78,8 +78,8 @@ try {
   } });
   assert.equal(capture(payload, homes.claude, now), true);
   claude = byId('claude');
-  assert.deepEqual(claude.windows.map(w => w.percent), [0, 0.22]);
-  assert.equal(claude.updatedAt, now);
+  assert.deepEqual(claude.windows.map(w => w.percent), [0.14, 0.21]);
+  assert.equal(claude.updatedAt, now - 10000);
   assert.equal(claude.detail, undefined);
   const captured = fs.readFileSync(liveFile, 'utf8');
   assert.ok(!captured.includes('private-'));
@@ -87,7 +87,17 @@ try {
   assert.equal(fs.readFileSync(liveFile, 'utf8'), captured);
   assert.throws(() => capture('{', homes.claude));
   assert.equal(fs.readFileSync(liveFile, 'utf8'), captured);
-  console.log('PASS: statusLine replaces old readings, preserves genuine zero and stores only quota metadata');
+  console.log('PASS: /usage stays authoritative over partial statusLine readings and bridge stores only quota metadata');
+
+  save(nativeFile, { cachedUsageUtilization: { fetchedAtMs: now + 1000, utilization: { limits: [
+    { kind: 'session', percent: 0, resets_at: new Date(now + 3600000).toISOString() },
+    { kind: 'weekly_all', percent: 26, resets_at: new Date(now + 86400000).toISOString() },
+    { kind: 'weekly_scoped', percent: 38, resets_at: new Date(now + 86400000).toISOString(), scope: { model: { display_name: 'Fable' } } },
+  ] } } });
+  claude = byId('claude');
+  assert.deepEqual(claude.windows.map(w => [w.label, w.percent]), [['5h', 0], ['7d', 0.26], ['Fable', 0.38]]);
+  assert.equal(claude.updatedAt, now + 1000);
+  console.log('PASS: Claude /usage limits match session, weekly and named model quotas');
 
   save(nativeFile, { cachedUsageUtilization: { fetchedAtMs: now + 1000, utilization: {
     five_hour: { utilization: 4, resets_at: new Date(now + 3600000).toISOString() },
@@ -97,7 +107,7 @@ try {
   assert.equal(byId('claude').windows[0].percent, 0);
   capture(JSON.stringify({ rate_limits: { five_hour: { used_percentage: 79, resets_at: now / 1000 - 1 } } }), homes.claude, now);
   assert.equal(byId('claude').windows[0].percent, undefined);
-  console.log('PASS: newest source wins, malformed source falls back, and expired live quotas stay pending');
+  console.log('PASS: incomplete native windows use fallback, malformed source is ignored, and expired quotas stay pending');
 
   const settingsFile = path.join(homes.claude, 'settings.json');
   const settings = { statusLine: { type: 'command', command: 'cat', padding: 2 }, hooks: { preserved: true }, env: { KEEP: 'value' } };
