@@ -12,7 +12,7 @@ const compiled = buildSync({ entryPoints: ['src/usage.ts'], bundle: true, platfo
 const loaded = new Module(__filename);
 loaded.paths = module.paths;
 loaded._compile(compiled, __filename);
-const { readUsage } = loaded.exports;
+const { readUsage, fetchClaudeUsage } = loaded.exports;
 const setupModule = new Module(__filename);
 setupModule.paths = module.paths;
 setupModule._compile(buildSync({ entryPoints: ['src/claudeUsageSetup.ts'], bundle: true, platform: 'node', format: 'cjs', write: false }).outputFiles[0].text, __filename);
@@ -27,6 +27,7 @@ const save = (file, data, mtime = now) => {
   fs.utimesSync(file, new Date(mtime), new Date(mtime));
 };
 const cacheFile = path.join(homes.claude, 'vscode-claude-status-cache.json');
+async function main() {
 try {
   assert.deepEqual(readUsage(homes).items.map(item => [item.id, item.windows.length]), [['claude', 0], ['codex', 0]]);
   console.log('PASS: clean start keeps both providers available without invented percentages');
@@ -99,6 +100,21 @@ try {
   assert.equal(claude.updatedAt, now + 1000);
   console.log('PASS: Claude /usage limits match session, weekly and named model quotas');
 
+  save(path.join(homes.claude, '.credentials.json'), { claudeAiOauth: { accessToken: 'fixture-token' } });
+  const live = await fetchClaudeUsage(homes.claude, async (_url, options) => {
+    assert.equal(options.method, 'GET');
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.headers.Authorization, 'Bearer fixture-token');
+    return { ok: true, json: async () => ({ limits: [
+      { kind: 'session', percent: 9, resets_at: new Date(now + 3600000).toISOString() },
+      { kind: 'weekly_all', percent: 27, resets_at: new Date(now + 86400000).toISOString() },
+      { kind: 'weekly_scoped', percent: 40, resets_at: new Date(now + 86400000).toISOString(), scope: { model: { display_name: 'Fable' } } },
+    ] }) };
+  });
+  assert.deepEqual(readUsage(homes, live).items[0].windows.map(w => w.percent), [0.09, 0.27, 0.4]);
+  assert.equal(await fetchClaudeUsage(homes.claude, async () => ({ ok: false })), undefined);
+  console.log('PASS: live account usage replaces stale local zero without persisting credentials or response');
+
   save(nativeFile, { cachedUsageUtilization: { fetchedAtMs: now + 1000, utilization: {
     five_hour: { utilization: 4, resets_at: new Date(now + 3600000).toISOString() },
   } } });
@@ -169,3 +185,5 @@ try {
   assert.ok(path.basename(target).startsWith('muxentra-usage-'));
   fs.rmSync(target, { recursive: true, force: true });
 }
+}
+void main().catch(err => { console.error(err); process.exitCode = 1; });

@@ -484,9 +484,9 @@ body.pane-dragging * {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 3px 6px;
+  gap: 4px;
+  min-height: 34px;
+  padding: 2px 5px;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
@@ -495,11 +495,8 @@ body.pane-dragging * {
   white-space: nowrap;
   scrollbar-width: none;
   color: var(--vscode-foreground);
-  background:
-    linear-gradient(90deg, rgba(224, 122, 95, 0.08), transparent 38%, rgba(34, 197, 94, 0.06)),
-    var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
   border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 #usage::-webkit-scrollbar {
@@ -514,15 +511,14 @@ body.pane-dragging * {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 9px;
-  min-height: 30px;
-  padding: 2px 7px 2px 3px;
+  gap: 7px;
+  height: 28px;
+  padding: 0 8px 0 5px;
   box-sizing: border-box;
   color: var(--vscode-foreground);
-  background: color-mix(in srgb, var(--vscode-editor-background) 76%, transparent);
-  border: 1px solid color-mix(in srgb, var(--usage-brand) 28%, var(--vscode-widget-border, transparent));
-  border-radius: 7px;
-  box-shadow: inset 2px 0 0 var(--usage-brand), 0 1px 2px rgba(0, 0, 0, 0.14);
+  background: color-mix(in srgb, var(--usage-brand) 6%, var(--vscode-editor-background));
+  border: 1px solid color-mix(in srgb, var(--usage-brand) 24%, var(--vscode-widget-border, transparent));
+  border-radius: 5px;
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
@@ -531,8 +527,8 @@ body.pane-dragging * {
 
 .usage-item:hover,
 .usage-item[aria-expanded="true"] {
-  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
-  border-color: color-mix(in srgb, var(--usage-brand) 55%, var(--vscode-widget-border, transparent));
+  background: color-mix(in srgb, var(--usage-brand) 12%, var(--vscode-editor-background));
+  border-color: color-mix(in srgb, var(--usage-brand) 56%, var(--vscode-widget-border, transparent));
 }
 
 .usage-item:focus-visible {
@@ -543,24 +539,24 @@ body.pane-dragging * {
 .usage-provider {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .usage-provider-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 17px;
+  height: 17px;
   flex: 0 0 auto;
   color: var(--usage-brand);
-  background: color-mix(in srgb, var(--usage-brand) 14%, transparent);
-  border-radius: 6px;
+  background: color-mix(in srgb, var(--usage-brand) 13%, transparent);
+  border-radius: 4px;
 }
 
 .usage-provider-icon svg {
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
   fill: currentColor;
   stroke: none;
 }
@@ -570,52 +566,52 @@ body.pane-dragging * {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  min-width: 44px;
+  min-width: 0;
   line-height: 1.05;
 }
 
 .usage-name {
   color: var(--vscode-foreground);
   font-weight: 650;
+  font-size: 10px;
   letter-spacing: 0.01em;
 }
 
 .usage-plan {
-  max-width: 70px;
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--vscode-descriptionForeground);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
+  display: none;
 }
 
 .usage-win {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: 12px 3px;
+  column-gap: 5px;
+  row-gap: 2px;
+  align-content: center;
+  min-width: 49px;
   height: 22px;
-  padding-left: 8px;
+  padding-left: 7px;
   border-left: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
 }
 
 .usage-win-label {
-  min-width: 19px;
+  min-width: 0;
   color: var(--vscode-descriptionForeground);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  text-align: right;
+  text-align: left;
 }
 
 .usage-bar {
   position: relative;
-  display: inline-block;
-  width: 66px;
-  height: 6px;
+  display: block;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 3px;
   border-radius: 999px;
   overflow: hidden;
   background: color-mix(in srgb, currentColor 17%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 10%, transparent);
 }
 
 .usage-bar i {
@@ -624,8 +620,7 @@ body.pane-dragging * {
   display: block;
   min-width: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, color-mix(in srgb, currentColor 72%, white), currentColor);
-  box-shadow: 0 0 8px color-mix(in srgb, currentColor 38%, transparent);
+  background: currentColor;
   transition: width 240ms ease;
 }
 
@@ -655,29 +650,12 @@ body.pane-dragging * {
 }
 
 .usage-pct {
-  min-width: 31px;
+  min-width: 25px;
   color: var(--vscode-foreground);
+  font-size: 10px;
   font-weight: 650;
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-
-.usage-reset {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--vscode-descriptionForeground);
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-reset svg {
-  width: 12px;
-  height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.35;
 }
 
 .usage-detail {
@@ -689,7 +667,7 @@ body.pane-dragging * {
 
 .usage-detail.status {
   max-width: none;
-  padding: 1px 6px;
+  padding: 0 5px;
   border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 32%, transparent);
   border-radius: 999px;
   color: var(--vscode-editorWarning-foreground, #cca700);
@@ -697,7 +675,7 @@ body.pane-dragging * {
   font-size: 9px;
   font-weight: 650;
   letter-spacing: 0.02em;
-  line-height: 16px;
+  line-height: 15px;
 }
 
 .usage-spacer {
@@ -715,14 +693,15 @@ body.pane-dragging * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 28px;
+  gap: 4px;
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
-  padding: 0 9px;
-  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.28));
-  border-radius: 7px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
   color: var(--vscode-foreground);
-  background: color-mix(in srgb, var(--vscode-editor-background) 70%, transparent);
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
   font: inherit;
   cursor: pointer;
   transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
@@ -744,10 +723,24 @@ body.pane-dragging * {
   stroke-width: 1.35;
 }
 
+#usage > .usage-refresh {
+  position: sticky;
+  right: 0;
+}
+
+#usage .usage-refresh-label {
+  display: none;
+}
+
+.usage-refresh:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
 #usage-popover {
   position: absolute;
   z-index: 30;
-  bottom: 44px;
+  bottom: 40px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -831,8 +824,23 @@ body.pane-dragging * {
 
 #usage-popover .usage-refresh {
   align-self: flex-start;
+  width: auto;
   height: 25px;
   margin-top: 2px;
+  padding: 0 7px;
+  border-color: var(--vscode-widget-border, rgba(128, 128, 128, 0.28));
+}
+
+#usage-popover .usage-refresh-label {
+  display: inline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-item,
+  .usage-refresh,
+  .usage-bar i {
+    transition: none;
+  }
 }
 
 .pane.active .pane-header {
@@ -1050,18 +1058,14 @@ body.pane-dragging * {
 }
 
 @media (max-width: 980px) {
-  .usage-bar {
-    width: 52px;
+  .usage-item {
+    gap: 5px;
+    padding-right: 6px;
   }
 
-  .usage-plan,
-  .usage-refresh-label {
-    display: none;
-  }
-
-  .usage-refresh {
-    width: 30px;
-    padding: 0;
+  .usage-win {
+    min-width: 45px;
+    padding-left: 5px;
   }
 }
 
@@ -1073,10 +1077,6 @@ body.pane-dragging * {
   .tab {
     height: 30px;
     min-width: 92px;
-  }
-
-  .usage-reset {
-    display: none;
   }
 }
 

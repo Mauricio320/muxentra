@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales múltiples, splits anidados y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -282,7 +282,7 @@
         "muxentra.showUsage": {
           "type": "boolean",
           "default": true,
-          "description": "Muestra una barra inferior con el uso de Claude Code y de OpenAI Codex, leído de los datos locales de cada herramienta."
+          "description": "Muestra el uso de Claude Code y OpenAI Codex. Claude se consulta con la sesión local mientras el panel está visible; Codex se lee de sus datos locales."
         },
         "muxentra.agentStatus": {
           "type": "boolean",
@@ -330,7 +330,7 @@
           "type": "number",
           "default": 60,
           "minimum": 15,
-          "description": "Cada cuántos segundos se relee el uso mientras el panel está visible."
+          "description": "Cada cuántos segundos se releen los datos locales mientras el panel está visible. La consulta de Claude tiene un intervalo independiente de cinco minutos."
         },
         "muxentra.imagePasteDir": {
           "type": "string",

@@ -92,8 +92,6 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v2h3v3h2v6h-3v3h-2v2h-2v-4H9v4H7v-2H5v-3H2V9h2V6h3V4Zm2 5v2h2V9H9Zm4 0v2h2V9h-2Z"/></svg>',
   codex:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 5.1 12 2l5.4 3.1 3.1 5.4v6.2L15.1 20H8.9l-5.4-3.3v-6.2L6.6 5.1Zm2.8 3.4L6.8 12l2.6 3.5 1.5-1.1L9.1 12l1.8-2.4-1.5-1.1Zm4.7 6.8h3.5v-1.9h-3.5v1.9Z"/></svg>',
-  clock:
-    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.8v3.5l2.4 1.4"/></svg>',
   bell:
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2a3.6 3.6 0 0 0-3.6 3.6c0 3-1.2 4-1.2 4h9.6s-1.2-1-1.2-4A3.6 3.6 0 0 0 8 2.2Z"/><path d="M6.9 12.1a1.3 1.3 0 0 0 2.2 0"/></svg>',
   check:
@@ -1566,9 +1564,14 @@ function renderUsage(snapshot: UsageSnapshot | null): void {
     },
   );
   usageEl.hidden = false;
+  const focused = document.activeElement as HTMLElement | null;
+  const focusedProvider = usageEl.contains(focused) ? focused?.closest<HTMLElement>('.usage-item')?.dataset.provider : undefined;
+  const focusedRefresh = focused?.classList.contains('usage-refresh') && usageEl.contains(focused);
   const spacer = document.createElement('span');
   spacer.className = 'usage-spacer';
   usageEl.replaceChildren(...items.map(renderUsageItem), spacer, renderUsageRefresh(snapshot?.updatedAt));
+  if (focusedProvider) usageEl.querySelector<HTMLButtonElement>(`[data-provider="${focusedProvider}"]`)?.focus({ preventScroll: true });
+  else if (focusedRefresh) usageEl.querySelector<HTMLButtonElement>('.usage-refresh')?.focus({ preventScroll: true });
   renderUsagePopover();
   fitVisible();
 }
@@ -1580,7 +1583,8 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
   el.dataset.provider = item.id;
   el.setAttribute('aria-controls', 'usage-popover');
   el.setAttribute('aria-expanded', String(openUsageId === item.id));
-  el.setAttribute('aria-label', `Ver detalle de uso de ${item.label}`);
+  const summary = item.windows.map(w => `${w.label} ${w.percent === undefined ? 'pendiente' : `${Math.round(w.percent * 100)}%`}`).join(', ');
+  el.setAttribute('aria-label', `${item.label}: ${summary || 'sin datos de cuota'}. Ver detalle`);
   el.style.setProperty('--usage-brand', item.id === 'claude' ? '#e07a5f' : '#22c55e');
 
   const provider = document.createElement('span');
@@ -1636,17 +1640,6 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
     el.append(chunk);
   }
 
-  const reset = formatReset(item.windows.find(w => w.resetsAt)?.resetsAt);
-  if (reset) {
-    const resetEl = document.createElement('span');
-    resetEl.className = 'usage-reset';
-    resetEl.innerHTML = ICONS.clock;
-    const resetText = document.createElement('span');
-    resetText.textContent = reset;
-    resetEl.append(resetText);
-    el.append(resetEl);
-  }
-
   const status = item.windows.length ? item.detail : item.error ? 'Lectura pendiente' : 'Sin datos de cuota';
   if (status) {
     const detail = document.createElement('span');
@@ -1667,6 +1660,7 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
 
 function renderUsagePopover(): void {
   const item = usageSnapshot?.items.find(value => value.id === openUsageId);
+  const focusedRefresh = usagePopoverEl.contains(document.activeElement);
   usagePopoverEl.hidden = !item || !showUsage;
   usagePopoverEl.replaceChildren();
   for (const button of usageEl.querySelectorAll<HTMLButtonElement>('.usage-item')) {
@@ -1681,7 +1675,7 @@ function renderUsagePopover(): void {
   const header = document.createElement('div');
   header.className = 'usage-popover-header';
   const heading = document.createElement('strong');
-  heading.textContent = item.label;
+  heading.textContent = item.plan ? `${item.label} · ${item.plan}` : item.label;
   const age = document.createElement('span');
   age.textContent = item.updatedAt
     ? `Dato de ${new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -1726,7 +1720,9 @@ function renderUsagePopover(): void {
     note.textContent = item.detail ?? 'Sin datos de cuota';
     usagePopoverEl.append(note);
   }
-  usagePopoverEl.append(renderUsageRefresh(usageSnapshot?.updatedAt));
+  const refresh = renderUsageRefresh(usageSnapshot?.updatedAt);
+  usagePopoverEl.append(refresh);
+  if (focusedRefresh) refresh.focus({ preventScroll: true });
 }
 
 function renderUsageRefresh(updatedAt: number | undefined): HTMLButtonElement {
@@ -1761,7 +1757,7 @@ function usageTooltip(item: UsageItem): string {
   if (item.detail) lines.push(item.detail);
   if (item.error) lines.push(item.error);
   if (item.updatedAt) lines.push(`Dato de ${new Date(item.updatedAt).toLocaleString()}`);
-  lines.push('Clic para releer los datos locales disponibles.');
+  lines.push('Clic para ver el detalle del consumo.');
   return lines.join('\n');
 }
 

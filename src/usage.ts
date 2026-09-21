@@ -1,6 +1,6 @@
-// Lee el uso de Claude Code y de OpenAI Codex desde los datos que cada
-// herramienta deja en el disco. Todo es de solo lectura y tolerante a fallos:
-// si una fuente aún no tiene porcentajes, se indica sin inventar un consumo.
+// Claude combina una lectura puntual de la cuenta con sus caches locales;
+// Codex se lee de sus sesiones en disco. Si falta un porcentaje vigente,
+// se indica como pendiente en vez de inventar consumo.
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -12,12 +12,16 @@ const CODEX_HOME = path.join(os.homedir(), '.codex');
 
 /** A partir de esta edad se identifica el dato como antiguo, sin ocultarlo. */
 const CLAUDE_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const CLAUDE_SESSION_MAX_AGE_MS = 8 * 60 * 1000;
 const CLAUDE_TOKEN_WINDOW_MS = 5 * 60 * 60 * 1000;
 
-export function readUsage(homes = { claude: CLAUDE_HOME, codex: CODEX_HOME }): UsageSnapshot {
+export function readUsage(
+  homes = { claude: CLAUDE_HOME, codex: CODEX_HOME },
+  liveClaude?: UsageItem,
+): UsageSnapshot {
   const items: UsageItem[] = [];
   for (const id of ['claude', 'codex'] as const) {
-    const item = safe(() => id === 'claude' ? readClaude(homes.claude) : readCodex(homes.codex), id);
+    const item = safe(() => id === 'claude' ? readClaude(homes.claude, liveClaude) : readCodex(homes.codex), id);
     items.push(item ?? { id, label: id === 'claude' ? 'Claude' : 'Codex', windows: [], detail: 'Sin datos de cuota' });
   }
   return { items, updatedAt: Date.now() };
@@ -61,8 +65,9 @@ interface ClaudeNativeUsage {
   };
 }
 
-function readClaude(home: string): UsageItem | undefined {
+function readClaude(home: string, live?: UsageItem): UsageItem | undefined {
   const sources: UsageItem[] = [];
+  if (live?.id === 'claude') sources.push(refreshClaudeLive(live));
   // /usage conserva las mismas ventanas y nombres que muestra Claude. Las
   // cabeceras del statusLine pueden ser parciales o diferir en el redondeo.
   for (const read of [readClaudeNativeCache, readClaudeStatusline, readClaudeCache]) {
@@ -96,6 +101,47 @@ function readClaude(home: string): UsageItem | undefined {
   };
 }
 
+function refreshClaudeLive(item: UsageItem): UsageItem {
+  const age = Date.now() - (item.updatedAt ?? 0);
+  return {
+    ...item,
+    windows: item.windows.map(window => {
+      if (window.resetsAt !== undefined && window.resetsAt <= Date.now() / 1000) {
+        return { label: window.label, stale: true };
+      }
+      if (age > CLAUDE_CACHE_MAX_AGE_MS || (window.label === '5h' && age > CLAUDE_SESSION_MAX_AGE_MS)) {
+        return { ...window, percent: undefined, stale: true };
+      }
+      return window;
+    }),
+  };
+}
+
+/** Consulta el mismo uso de la cuenta que muestra Claude, sin guardar el token ni la respuesta. */
+export async function fetchClaudeUsage(
+  home = CLAUDE_HOME,
+  request: typeof fetch = fetch,
+): Promise<UsageItem | undefined> {
+  try {
+    const credentials = JSON.parse(fs.readFileSync(path.join(home, '.credentials.json'), 'utf8')) as {
+      claudeAiOauth?: { accessToken?: unknown };
+    };
+    const token = credentials.claudeAiOauth?.accessToken;
+    if (typeof token !== 'string' || !token) return undefined;
+    const response = await request('https://api.anthropic.com/api/oauth/usage', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return undefined;
+    const utilization = await response.json() as ClaudeNativeUsage['utilization'];
+    return claudeNativeItem({ fetchedAtMs: Date.now(), utilization });
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Cache que escribe la extensión de estado de Claude a partir de las cabeceras
  * de límite de la API. Se conserva como respaldo de las fuentes nativas.
@@ -120,6 +166,10 @@ function readClaudeNativeCache(home: string): UsageItem | undefined {
     ? path.join(os.homedir(), '.claude.json') : path.join(home, '.claude.json');
   if (!fs.existsSync(file)) return undefined;
   const data = JSON.parse(fs.readFileSync(file, 'utf8')).cachedUsageUtilization as ClaudeNativeUsage | undefined;
+  return claudeNativeItem(data);
+}
+
+function claudeNativeItem(data: ClaudeNativeUsage | undefined): UsageItem | undefined {
   if (!data || typeof data.fetchedAtMs !== 'number' || !Number.isFinite(data.fetchedAtMs)) return undefined;
   const usage = data.utilization;
   const limits = Array.isArray(usage?.limits) ? usage.limits : [];
@@ -170,7 +220,13 @@ function claudeCacheItem(cache: ClaudeCache): UsageItem | undefined {
       rolled.push(label);
       return;
     }
-    windows.push({ label, percent: clamp01(utilization), resetsAt: reset, stale: outdated || undefined });
+    const sessionOutdated = label === '5h' && (!Number.isFinite(updatedAt) || Date.now() - updatedAt > CLAUDE_SESSION_MAX_AGE_MS);
+    windows.push({
+      label,
+      percent: sessionOutdated ? undefined : clamp01(utilization),
+      resetsAt: reset,
+      stale: outdated || sessionOutdated || undefined,
+    });
   };
   add('5h', data.utilization5h, data.reset5hAt);
   add('7d', data.utilization7d, data.reset7dAt);

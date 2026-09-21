@@ -10,11 +10,12 @@ import type {
   PaneActivity,
   TerminalFontWeight,
   TermSettings,
+  UsageItem,
   WebviewMessage,
   WorkspaceLayout,
 } from './protocol';
 import { PtyClient, workingDirectory } from './ptyClient';
-import { readUsage } from './usage';
+import { fetchClaudeUsage, readUsage } from './usage';
 
 const LAYOUT_KEY = 'muxentra.layout';
 
@@ -79,6 +80,9 @@ export class MuxentraPanel {
   private flushScheduled = false;
   private usageTimer: NodeJS.Timeout | undefined;
   private usageRefreshTimer: NodeJS.Timeout | undefined;
+  private claudeLive: UsageItem | undefined;
+  private claudeLivePending = false;
+  private claudeLiveAttemptAt = 0;
   private branchTimer: NodeJS.Timeout | undefined;
   /** Directorio actual y última rama enviada, por terminal. */
   private readonly cwds = new Map<string, string>();
@@ -330,17 +334,36 @@ export class MuxentraPanel {
     }, seconds * 1000);
   }
 
-  private sendUsage(): void {
+  private sendUsage(manual = false): void {
     const showUsage = usageEnabled();
     if (!showUsage) {
       this.post({ type: 'usage', usage: null, showUsage: false });
       return;
     }
     try {
-      this.post({ type: 'usage', usage: readUsage(), showUsage: true });
+      this.post({ type: 'usage', usage: readUsage(undefined, this.claudeLive), showUsage: true });
+      if (this.panel.visible) void this.refreshClaudeLive(manual);
     } catch (err) {
       log().warn(`no se pudo leer el uso: ${err instanceof Error ? err.message : String(err)}`);
       this.post({ type: 'usage', usage: null, showUsage: true });
+    }
+  }
+
+  private async refreshClaudeLive(manual: boolean): Promise<void> {
+    const now = Date.now();
+    // Claude también consulta esta cuota. Evitar peticiones por cada salida de
+    // terminal y dejar un intervalo menor solo para el botón de actualizar.
+    const interval = manual ? 60_000 : 5 * 60_000;
+    if (this.claudeLivePending || now - this.claudeLiveAttemptAt < interval) return;
+    this.claudeLiveAttemptAt = now;
+    this.claudeLivePending = true;
+    try {
+      const live = await fetchClaudeUsage();
+      if (!live || MuxentraPanel.current !== this || !usageEnabled()) return;
+      this.claudeLive = live;
+      this.post({ type: 'usage', usage: readUsage(undefined, live), showUsage: true });
+    } finally {
+      this.claudeLivePending = false;
     }
   }
 
@@ -426,7 +449,7 @@ export class MuxentraPanel {
         void vscode.env.clipboard.writeText(m.text);
         break;
       case 'refreshUsage':
-        this.sendUsage();
+        this.sendUsage(true);
         break;
     }
   }
@@ -512,7 +535,7 @@ export class MuxentraPanel {
   <div id="app">
     <div id="tabbar"></div>
     <div id="content"></div>
-    <div id="usage-popover" hidden></div>
+    <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
     <div id="usage" hidden></div>
   </div>
   <script nonce="${nonce}" src="${script}"></script>
