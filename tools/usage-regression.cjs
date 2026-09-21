@@ -5,12 +5,18 @@ const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
 const { buildSync } = require('esbuild');
+const { spawnSync } = require('node:child_process');
+const { capture } = require('../assets/claude-usage.cjs');
 
 const compiled = buildSync({ entryPoints: ['src/usage.ts'], bundle: true, platform: 'node', format: 'cjs', write: false }).outputFiles[0].text;
 const loaded = new Module(__filename);
 loaded.paths = module.paths;
 loaded._compile(compiled, __filename);
 const { readUsage } = loaded.exports;
+const setupModule = new Module(__filename);
+setupModule.paths = module.paths;
+setupModule._compile(buildSync({ entryPoints: ['src/claudeUsageSetup.ts'], bundle: true, platform: 'node', format: 'cjs', write: false }).outputFiles[0].text, __filename);
+const { installClaudeUsage } = setupModule.exports;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'muxentra-usage-'));
 const homes = { claude: path.join(root, 'claude'), codex: path.join(root, 'codex') };
 const now = Date.now();
@@ -54,6 +60,72 @@ try {
   assert.equal(claude.windows.length, 0);
   assert.ok(claude.detail.includes('tokens'));
   console.log('PASS: partial cache and transcript tokens never invent a quota percentage');
+
+  const nativeFile = path.join(homes.claude, '.claude.json');
+  const liveFile = path.join(homes.claude, 'muxentra-usage.json');
+  save(nativeFile, { cachedUsageUtilization: { fetchedAtMs: now - 10000, utilization: {
+    five_hour: { utilization: 14, resets_at: new Date(now + 3600000).toISOString() },
+    seven_day: { utilization: 21, resets_at: new Date(now + 86400000).toISOString() },
+  } } });
+  claude = byId('claude');
+  assert.deepEqual(claude.windows.map(w => w.percent), [0.14, 0.21]);
+  assert.equal(claude.updatedAt, now - 10000);
+  console.log('PASS: native /usage cache supplies current percentages with its actual observation time');
+
+  const payload = JSON.stringify({ session_id: 'private-session', transcript_path: 'private-path', rate_limits: {
+    five_hour: { used_percentage: 0, resets_at: now / 1000 + 3600 },
+    seven_day: { used_percentage: 22, resets_at: now / 1000 + 86400 },
+  } });
+  assert.equal(capture(payload, homes.claude, now), true);
+  claude = byId('claude');
+  assert.deepEqual(claude.windows.map(w => w.percent), [0, 0.22]);
+  assert.equal(claude.updatedAt, now);
+  assert.equal(claude.detail, undefined);
+  const captured = fs.readFileSync(liveFile, 'utf8');
+  assert.ok(!captured.includes('private-'));
+  assert.equal(capture('{"rate_limits":null}', homes.claude, now + 1000), false);
+  assert.equal(fs.readFileSync(liveFile, 'utf8'), captured);
+  assert.throws(() => capture('{', homes.claude));
+  assert.equal(fs.readFileSync(liveFile, 'utf8'), captured);
+  console.log('PASS: statusLine replaces old readings, preserves genuine zero and stores only quota metadata');
+
+  save(nativeFile, { cachedUsageUtilization: { fetchedAtMs: now + 1000, utilization: {
+    five_hour: { utilization: 4, resets_at: new Date(now + 3600000).toISOString() },
+  } } });
+  assert.equal(byId('claude').windows[0].percent, 0.04);
+  save(nativeFile, '{');
+  assert.equal(byId('claude').windows[0].percent, 0);
+  capture(JSON.stringify({ rate_limits: { five_hour: { used_percentage: 79, resets_at: now / 1000 - 1 } } }), homes.claude, now);
+  assert.equal(byId('claude').windows[0].percent, undefined);
+  console.log('PASS: newest source wins, malformed source falls back, and expired live quotas stay pending');
+
+  const settingsFile = path.join(homes.claude, 'settings.json');
+  const settings = { statusLine: { type: 'command', command: 'cat', padding: 2 }, hooks: { preserved: true }, env: { KEEP: 'value' } };
+  save(settingsFile, settings);
+  const originalSettings = fs.readFileSync(settingsFile, 'utf8');
+  installClaudeUsage(process.cwd(), homes.claude, process.execPath);
+  const installed = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  assert.equal(installed.statusLine.padding, 2);
+  assert.ok(installed.statusLine.command.endsWith('| ( cat\n)'));
+  assert.deepEqual(installed.hooks, settings.hooks);
+  assert.deepEqual(installed.env, settings.env);
+  const backups = fs.readdirSync(homes.claude).filter(f => f.endsWith('.bak'));
+  assert.equal(backups.length, 1);
+  assert.equal(fs.readFileSync(path.join(homes.claude, backups[0]), 'utf8'), originalSettings);
+  installClaudeUsage(process.cwd(), homes.claude, process.execPath);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')), installed);
+  assert.equal(fs.readdirSync(homes.claude).filter(f => f.endsWith('.bak')).length, 1);
+  const bridge = path.join(homes.claude, 'muxentra-statusline.cjs');
+  for (const input of [payload, '{not json}']) {
+    const result = spawnSync(process.execPath, [bridge, '--passthrough'], { input, encoding: 'utf8', windowsHide: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, input);
+  }
+  const silent = spawnSync(process.execPath, [bridge], { input: payload, encoding: 'utf8', windowsHide: true });
+  assert.equal(silent.status, 0, silent.stderr);
+  assert.equal(silent.stdout, '');
+  assert.deepEqual(byId('claude').windows.map(w => w.percent), [0, 0.22]);
+  console.log('PASS: setup preserves existing settings and backup; bridge forwards exact stdin and is silent without a prior statusLine');
 
   const sessions = path.join(homes.codex, 'sessions', '2026', '09', '21');
   const observedAt = now - 120000;

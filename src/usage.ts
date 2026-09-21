@@ -45,24 +45,60 @@ interface ClaudeCache {
 }
 
 function readClaude(home: string): UsageItem | undefined {
-  let fromCache: UsageItem | undefined;
-  try {
-    fromCache = readClaudeCache(home);
-  } catch {
-    // La fuente puede estar a medio escribir: conservar el estado de espera.
+  const sources: UsageItem[] = [];
+  for (const read of [readClaudeStatusline, readClaudeNativeCache, readClaudeCache]) {
+    try {
+      const item = read(home);
+      if (item) sources.push(item);
+    } catch {
+      // Una fuente puede estar a medio escribir sin invalidar las demás.
+    }
   }
-  if (fromCache) return fromCache;
-  return readClaudeTokens(home);
+  sources.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  return sources[0] ?? readClaudeTokens(home);
 }
 
 /**
  * Cache que escribe la extensión de estado de Claude a partir de las cabeceras
- * de límite de la API. Es la única fuente local con el porcentaje real del plan.
+ * de límite de la API. Se conserva como respaldo de las fuentes nativas.
  */
 function readClaudeCache(home: string): UsageItem | undefined {
   const file = path.join(home, 'vscode-claude-status-cache.json');
   if (!fs.existsSync(file)) return undefined;
   const cache = JSON.parse(fs.readFileSync(file, 'utf8')) as ClaudeCache;
+  return claudeCacheItem(cache);
+}
+
+/** Cuotas recibidas del JSON oficial de statusLine, sin credenciales ni peticiones. */
+function readClaudeStatusline(home: string): UsageItem | undefined {
+  const file = path.join(home, 'muxentra-usage.json');
+  if (!fs.existsSync(file)) return undefined;
+  return claudeCacheItem(JSON.parse(fs.readFileSync(file, 'utf8')) as ClaudeCache);
+}
+
+/** Claude actualiza esta copia al consultar /usage; fetchedAtMs es la fecha del dato. */
+function readClaudeNativeCache(home: string): UsageItem | undefined {
+  const file = home === CLAUDE_HOME
+    ? path.join(os.homedir(), '.claude.json') : path.join(home, '.claude.json');
+  if (!fs.existsSync(file)) return undefined;
+  const data = JSON.parse(fs.readFileSync(file, 'utf8')).cachedUsageUtilization;
+  if (!data || !Number.isFinite(data.fetchedAtMs)) return undefined;
+  const five = data.utilization?.five_hour;
+  const week = data.utilization?.seven_day;
+  const percent = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isFinite(value) ? value / 100 : undefined;
+  const reset = (value: unknown): number | undefined =>
+    typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) / 1000 : undefined;
+  return claudeCacheItem({
+    updatedAt: new Date(data.fetchedAtMs).toISOString(),
+    usageData: {
+      utilization5h: percent(five?.utilization), reset5hAt: reset(five?.resets_at),
+      utilization7d: percent(week?.utilization), reset7dAt: reset(week?.resets_at),
+    },
+  });
+}
+
+function claudeCacheItem(cache: ClaudeCache): UsageItem | undefined {
   const data = cache.usageData;
   if (!data) return undefined;
 

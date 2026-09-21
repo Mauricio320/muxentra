@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { saveClipboardImage } from './clipboardImage';
+import { installClaudeUsage } from './claudeUsageSetup';
 import { log } from './log';
 import { MuxentraPanel } from './panel';
 import type { MuxentraCommand } from './protocol';
@@ -45,6 +46,15 @@ export function activate(ctx: vscode.ExtensionContext): void {
   };
 
   register('muxentra.open', () => MuxentraPanel.createOrShow(ctx, ptys));
+
+  register('muxentra.connectClaudeUsage', () => {
+    try {
+      installClaudeUsage(ctx.extensionPath);
+      void vscode.window.showInformationMessage('Muxentra: uso de Claude conectado. Se actualizará cuando Claude reciba su próxima respuesta.');
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Muxentra: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
 
   for (const command of FORWARDED) {
     register(`muxentra.${command}`, () => {

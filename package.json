@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales múltiples, splits anidados y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -45,6 +45,11 @@
   ],
   "contributes": {
     "commands": [
+      {
+        "command": "muxentra.connectClaudeUsage",
+        "title": "Conectar el uso actual de Claude",
+        "category": "Muxentra"
+      },
       {
         "command": "muxentra.open",
         "title": "Abrir terminales",

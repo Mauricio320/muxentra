@@ -52,7 +52,7 @@ Download the `.vsix` from the release page, open the Extensions view, and use "I
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.4.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.5.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -170,10 +170,10 @@ If something really breaks, open an issue with whatever the Output > "Muxentra" 
 
 ## Where the Claude and Codex usage comes from
 
-Everything is read from disk, read-only, with no network calls and no credentials.
+Usage is read from local files, with no network calls and no credentials.
 
 - **Codex**: the last `rate_limits` event in a recent session file under `~/.codex/sessions`. Up to 12 recent files are checked, so opening a session that has not reported its limits yet does not hide the previous reading. The displayed source time comes from the event, not an unrelated file update.
-- **Claude**: `~/.claude/vscode-claude-status-cache.json`, the cache written by the Claude Code status extension out of the API limit headers. Readings older than 12 hours stay visible with a "Sin actualizar" label. A window that has already reset shows a pending value rather than a guessed 0%. If the cache is unavailable, local transcript tokens are shown only in the tooltip; they are not a percentage of the plan.
+- **Claude**: run `Muxentra: Conectar el uso actual de Claude` once to receive the native `statusLine.rate_limits` data (Claude Code 2.1.251+). The command backs up `~/.claude/settings.json` and adds a local bridge while preserving the existing status line and its input. The bridge writes only percentages and reset times to `~/.claude/muxentra-usage.json`; it does not retain session paths or prompts. Native limits arrive after Claude's first API response. Muxentra also reads `cachedUsageUtilization` from `~/.claude.json` (refreshed by `/usage`) and the older `~/.claude/vscode-claude-status-cache.json`, preferring the most recent observation. Readings older than 12 hours are marked "Sin actualizar"; expired windows stay pending until a new reading arrives. Local transcript tokens are only a tooltip fallback, never a percentage of the plan.
 
 Both indicators reserve their place as soon as the panel opens. Missing quota readings show "Sin datos de cuota" and a neutral bar. The refresh button re-reads local files; "Consultado" is the read time, not a claim that the provider refreshed its data. Entering a command or completing a task also schedules a read, in addition to the configured interval.
 
@@ -260,4 +260,4 @@ Anyone who can talk to the terminal server can start processes as you, so the ch
 - **Paths coming from the terminal are filtered.** Each terminal's directory is reported by the shell through `OSC 7` or in the title, which means by whatever program is running there. Network paths (`\\host\share`, `//host/x`, `file://host/x`) are discarded: on Windows merely touching one opens an SMB connection to whatever host the text names, which is enough to capture the user's NTLM hash, and it would block the extension host until it times out. The same applies to the `gitdir:` of a `.git` file, which is chosen by the repository you open.
 - **The extension does not run in Restricted Mode.** It declares `untrustedWorkspaces: false`, so until you trust the folder it neither activates nor opens any shell.
 - **The webview is locked down.** `default-src 'none'`, scripts only with a random 192-bit nonce per load, resources limited to `dist/`. No `eval` and no network access from the interface.
-- **No network, no credentials.** Claude and Codex usage comes from local files, read-only.
+- **No network, no credentials.** Usage is read from local files. The optional Claude connection installs a local quota bridge and backs up the existing status-line configuration.
