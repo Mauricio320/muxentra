@@ -8,6 +8,7 @@
 // el nombre del pipe.
 
 import * as crypto from 'crypto';
+import type { TerminalGeometry, TerminalSnapshot } from './protocol';
 
 export const PROTOCOL_VERSION = 2;
 
@@ -19,7 +20,7 @@ export const MAX_LINE_CHARS = 8 * 1024 * 1024;
 export const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 export type ClientMessage =
-  | { t: 'hello'; version: number; nonce: string }
+  | { t: 'hello'; version: number; nonce: string; stateReplay?: boolean }
   | { t: 'auth'; proof: string }
   | {
       t: 'spawn';
@@ -30,8 +31,11 @@ export type ClientMessage =
       env: Record<string, string>;
       cols: number;
       rows: number;
+      scrollback?: number;
+      useConptyDll?: boolean;
     }
-  | { t: 'attach'; id: string; cols: number; rows: number }
+  | { t: 'attach'; id: string; cols: number; rows: number; scrollback?: number }
+  | { t: 'configure'; id: string; scrollback: number }
   | { t: 'input'; id: string; data: string }
   | { t: 'resize'; id: string; cols: number; rows: number }
   | { t: 'kill'; id: string }
@@ -40,10 +44,10 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { t: 'challenge'; version: number; nonce: string; proof: string }
-  | { t: 'welcome'; ok: boolean; alive: string[]; exited: string[]; error?: string }
-  | { t: 'spawned'; id: string; pid: number }
+  | { t: 'welcome'; ok: boolean; alive: string[]; exited: string[]; error?: string; stateReplay?: boolean }
+  | { t: 'spawned'; id: string; pid: number; geometry?: TerminalGeometry }
   | { t: 'spawnError'; id: string; message: string }
-  | { t: 'attached'; id: string; found: boolean; data?: string }
+  | { t: 'attached'; id: string; found: boolean; data?: string; snapshot?: TerminalSnapshot }
   | { t: 'data'; id: string; data: string }
   | { t: 'exit'; id: string; code: number };
 

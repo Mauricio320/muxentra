@@ -134,7 +134,7 @@ Worth knowing:
 - `muxentra.shellPath` and `muxentra.shellArgs`: an explicit shell. Empty means your default VS Code profile.
 - `muxentra.fontFamily` and `muxentra.fontSize`: when empty they come from `terminal.integrated.*` or `editor.*`.
 - `muxentra.scrollback`: lines of history per terminal. Defaults to 20000, enough to hold a whole Codex transcript.
-- `muxentra.rebuildAwareScrollback`: when a program rewrites its entire transcript right after a resize (Codex does, on every resize), clear that terminal's history before receiving it so a single copy remains instead of one per resize. On by default.
+- `muxentra.rebuildAwareScrollback`: use the modern ConPTY bundled with node-pty on Windows. This preserves TUI erase, positioning and alternate-screen sequences that the Windows 10 backend can rewrite incorrectly. On by default; changes apply to new terminals. Turning it off selects the system backend. Output volume never triggers history deletion.
 - `muxentra.showUsage`: show or hide the bottom usage bar.
 - `muxentra.agentStatus`: turn the per-terminal status tracking on or off.
 - `muxentra.notifyOn`: when VS Code notifies you. `all` (the default) on finish and on attention, `attention` only when the program asks for something, `none` never.
@@ -166,10 +166,10 @@ If something really breaks, open an issue with whatever the Output > "Muxentra" 
 
 Everything is read from disk, read-only, with no network calls and no credentials.
 
-- **Codex**: the last `rate_limits` event of the most recent session file in `~/.codex/sessions`, which carries the used percentage of each window and when it resets.
-- **Claude**: `~/.claude/vscode-claude-status-cache.json`, the cache written by the Claude Code status extension out of the API limit headers. It is the only local source with the real plan percentage. If it is missing or stale, the tokens of the last 5 hours are summed from the transcripts in `~/.claude/projects` instead.
+- **Codex**: the last `rate_limits` event in a recent session file under `~/.codex/sessions`. Up to 12 recent files are checked, so opening a session that has not reported its limits yet does not hide the previous reading. The displayed source time comes from the event, not an unrelated file update.
+- **Claude**: `~/.claude/vscode-claude-status-cache.json`, the cache written by the Claude Code status extension out of the API limit headers. Readings older than 12 hours stay visible with a "Sin actualizar" label. A window that has already reset shows a pending value rather than a guessed 0%. If the cache is unavailable, local transcript tokens are shown only in the tooltip; they are not a percentage of the plan.
 
-When a source is unavailable, that item simply does not appear.
+Both indicators reserve their place as soon as the panel opens. Missing quota readings show "Sin datos de cuota" and a neutral bar. The refresh button re-reads local files; "Consultado" is the read time, not a claim that the provider refreshed its data. Entering a command or completing a task also schedules a read, in addition to the configured interval.
 
 ## How it knows whether a terminal is working, done, or asking for you
 
@@ -239,7 +239,9 @@ The installer checks the SHA256 that GitHub publishes for each asset and refuses
 
 - Backend: `node-pty` 1.1.0 (Node-API, ships prebuilt binaries for Windows and macOS, compiles on install on Linux).
 - Frontend: `@xterm/xterm` 6 inside a webview with `retainContextWhenHidden`.
-- Terminal server: `dist/server.js`, launched by the extension with VS Code's own executable in Node mode (`ELECTRON_RUN_AS_NODE`), detached. It listens on a per-user named pipe (Windows) or unix socket. It keeps up to 1 MB of output per terminal to replay on reconnect. It shuts itself down after 5 minutes with no terminals and no clients. Its log lives in `<globalStorage>/server.log` and rotates at 512 KB.
+- Terminal server: `dist/server.js`, launched by the extension with VS Code's own executable in Node mode (`ELECTRON_RUN_AS_NODE`), detached. It listens on a per-user named pipe (Windows) or unix socket. A headless xterm keeps the terminal state and the configured scrollback (20000 lines by default, up to 100000). Reconnect restores a serialized snapshot at its original dimensions, then fits visible panes. Hidden panes keep their existing dimensions. Snapshot, output and resize share one ordered queue. It shuts itself down after 5 minutes with no terminals and no clients. Its log lives in `<globalStorage>/server.log` and rotates at 512 KB.
+
+When upgrading from a server without state replay, Muxentra keeps existing sessions alive and displays a notice. Finish and close those terminals before restarting the old server; reloading the extension alone does not replace that process. Already discarded history cannot be recovered from the previous 1 MB buffer.
 
 ## Security
 

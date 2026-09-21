@@ -7,7 +7,9 @@
 
 import * as fs from 'fs';
 import * as net from 'net';
+import * as os from 'os';
 import type { IPty } from 'node-pty';
+import { TerminalState } from './terminalState';
 import {
   HANDSHAKE_TIMEOUT_MS,
   MAX_HANDSHAKE_CHARS,
@@ -25,14 +27,13 @@ const pipePath = process.argv[2];
 const tokenFile = process.argv[3];
 const logFile = process.argv[4];
 
-const MAX_BUFFER_CHARS = 1024 * 1024;
 const IDLE_EXIT_MS = 5 * 60 * 1000;
 const MAX_LOG_BYTES = 512 * 1024;
 
 interface Term {
   proc: IPty;
-  chunks: string[];
-  size: number;
+  state: TerminalState;
+  pendingData?: { chunks: string[] };
   owner: Conn | null;
   /** Último tamaño aplicado al pty, para no repetir un resize que no cambia nada. */
   cols: number;
@@ -75,6 +76,7 @@ function log(line: string): void {
 
 class Conn {
   authed = false;
+  stateReplay = false;
   private buffer = '';
   private clientNonce = '';
   private serverNonce = '';
@@ -155,6 +157,7 @@ class Conn {
       return;
     }
     this.greeted = true;
+    this.stateReplay = msg.stateReplay === true;
     this.clientNonce = msg.nonce;
     this.serverNonce = newNonce();
     this.send({
@@ -185,6 +188,7 @@ class Conn {
       ok: true,
       alive: [...terms.keys()],
       exited: [...exitedWithoutOwner],
+      stateReplay: true,
     });
     exitedWithoutOwner.clear();
   }
@@ -211,9 +215,19 @@ function handleAuthed(conn: Conn, msg: ClientMessage): void {
         conn.send({ t: 'attached', id: msg.id, found: false });
         break;
       }
-      term.owner = conn;
-      conn.send({ t: 'attached', id: msg.id, found: true, data: term.chunks.join('') });
-      resize(term, msg.cols, msg.rows);
+      // El snapshot es una barrera: contiene toda la salida anterior y ningún
+      // byte posterior. Reconectar nunca cambia el tamaño del proceso.
+      term.pendingData = undefined;
+      void term.state.run(() => {
+        if (conn.sock.destroyed) return;
+        if (msg.scrollback !== undefined) term.state.configure(msg.scrollback);
+        const snapshot = term.state.snapshot();
+        conn.send(conn.stateReplay
+          ? { t: 'attached', id: msg.id, found: true, snapshot }
+          : { t: 'attached', id: msg.id, found: true, data: snapshot.data });
+        term.owner = conn;
+        if (!conn.stateReplay) resize(term, msg.cols, msg.rows);
+      }).catch(err => log(`snapshot ${msg.id}: ${String(err)}`));
       log(`attach ${msg.id}`);
       break;
     }
@@ -225,7 +239,18 @@ function handleAuthed(conn: Conn, msg: ClientMessage): void {
     case 'resize': {
       if (typeof msg.id !== 'string') break;
       const term = terms.get(msg.id);
-      if (term) resize(term, msg.cols, msg.rows);
+      if (term) {
+        term.pendingData = undefined;
+        void term.state.run(() => resize(term, msg.cols, msg.rows));
+      }
+      break;
+    }
+    case 'configure': {
+      const term = terms.get(msg.id);
+      if (term) {
+        term.pendingData = undefined;
+        void term.state.run(() => term.state.configure(msg.scrollback));
+      }
       break;
     }
     case 'kill':
@@ -259,6 +284,7 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
   const cols = size(msg.cols, 80, 2);
   const rows = size(msg.rows, 24, 1);
   let proc: IPty;
+  const useConptyDll = process.platform === 'win32' && msg.useConptyDll !== false;
   try {
     const pty = require('node-pty') as typeof import('node-pty');
     proc = pty.spawn(msg.file, msg.args, {
@@ -267,6 +293,7 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
       rows,
       cwd: msg.cwd,
       env: msg.env,
+      useConptyDll,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -274,19 +301,33 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     conn.send({ t: 'spawnError', id: msg.id, message });
     return;
   }
-  const term: Term = { proc, chunks: [], size: 0, owner: conn, cols, rows };
+  const state = new TerminalState({
+    cols, rows,
+    ...(process.platform === 'win32' ? {
+      // node-pty 1.1.0 incluye ConPTY 1.23: soporta el reflow moderno aunque el
+      // SO sea Windows 10. xterm necesita la capacidad del backend, no la del SO.
+      windowsPty: { backend: 'conpty' as const, buildNumber: useConptyDll ? 22621 : Number(os.release().split('.')[2]) },
+    } : {}),
+  }, msg.scrollback);
+  const term: Term = { proc, state, owner: conn, cols, rows };
   terms.set(msg.id, term);
   exitedWithoutOwner.delete(msg.id);
   log(`spawn ${msg.id}: pid ${proc.pid} ${msg.file} ${msg.args.join(' ')}`);
-  conn.send({ t: 'spawned', id: msg.id, pid: proc.pid });
+  conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, geometry: state.geometry });
 
   proc.onData(data => {
-    term.chunks.push(data);
-    term.size += data.length;
-    while (term.size > MAX_BUFFER_CHARS && term.chunks.length > 1) {
-      term.size -= term.chunks.shift()!.length;
+    if (term.pendingData) {
+      term.pendingData.chunks.push(data);
+      return;
     }
-    term.owner?.send({ t: 'data', id: msg.id, data });
+    const batch = { chunks: [data] };
+    term.pendingData = batch;
+    void state.run(async () => {
+      if (term.pendingData === batch) term.pendingData = undefined;
+      const output = batch.chunks.join('');
+      await state.write(output);
+      term.owner?.send({ t: 'data', id: msg.id, data: output });
+    }).catch(err => log(`salida ${msg.id}: ${String(err)}`));
   });
 
   proc.onExit(({ exitCode }) => {
@@ -294,8 +335,11 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     if (terms.get(msg.id) !== term) return;
     terms.delete(msg.id);
     lastActivity = Date.now();
-    if (term.owner) term.owner.send({ t: 'exit', id: msg.id, code: exitCode });
-    else exitedWithoutOwner.add(msg.id);
+    void state.run(() => {
+      if (term.owner) term.owner.send({ t: 'exit', id: msg.id, code: exitCode });
+      else exitedWithoutOwner.add(msg.id);
+      state.dispose();
+    });
   });
 }
 
@@ -305,16 +349,17 @@ function size(value: unknown, fallback: number, min: number): number {
 }
 
 function resize(term: Term, rawCols: unknown, rawRows: unknown): void {
-  const cols = size(rawCols, 80, 2);
-  const rows = size(rawRows, 24, 1);
+  const cols = size(rawCols, term.cols, 2);
+  const rows = size(rawRows, term.rows, 1);
   // Un resize al mismo tamaño manda igual un SIGWINCH, y las TUI de los agentes
   // responden repintando el marco entero. Al reconectar eso dejaba una copia
   // del último frame justo debajo del historial que se acababa de reproducir.
   if (cols === term.cols && rows === term.rows) return;
-  term.cols = cols;
-  term.rows = rows;
   try {
     term.proc.resize(cols, rows);
+    term.state.resize(cols, rows);
+    term.cols = cols;
+    term.rows = rows;
   } catch {
     // Proceso terminando.
   }
@@ -330,6 +375,7 @@ function kill(id: string): void {
   } catch {
     // Ya estaba muerto.
   }
+  void term.state.run(() => term.state.dispose());
 }
 
 function shutdown(code: number): void {

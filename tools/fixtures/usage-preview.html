@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../dist/webview.css">
+  <title>Muxentra — prueba local del indicador de uso</title>
+  <style>
+    :root {
+      --vscode-editor-background: #1f1f1f;
+      --vscode-foreground: #ddd;
+      --vscode-font-family: "Segoe UI", sans-serif;
+      --vscode-font-size: 13px;
+      --vscode-descriptionForeground: #aaa;
+      --vscode-editorGroupHeader-tabsBackground: #252526;
+      --vscode-tab-activeBackground: #1f1f1f;
+      --vscode-tab-inactiveBackground: #252526;
+      --vscode-tab-activeForeground: #fff;
+      --vscode-tab-inactiveForeground: #bbb;
+      --vscode-widget-border: #444;
+      --vscode-focusBorder: #007fd4;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"><div id="tabbar"></div><div id="content"></div><div id="usage" hidden></div></div>
+  <output id="measurements" hidden></output>
+  <script>
+    const scenario = new URLSearchParams(location.search).get('state') || 'empty';
+    const send = data => window.dispatchEvent(new MessageEvent('message', { data }));
+    const settings = {
+      fontFamily: 'Consolas', fontSize: 14, letterSpacing: 0, lineHeight: 1,
+      fontWeight: 'normal', fontWeightBold: 'bold', scrollback: 20000,
+      rebuildAwareScrollback: true, cursorBlink: false, platform: 'win32',
+      windowsBuildNumber: 22621, agentStatus: false, quietSeconds: 3, attentionSound: false,
+    };
+    const measure = () => {
+      const usage = document.querySelector('#usage').getBoundingClientRect();
+      const content = document.querySelector('#content').getBoundingClientRect();
+      return { height: usage.height, top: usage.top, contentBottom: content.bottom,
+        providers: [...document.querySelectorAll('.usage-name')].map(el => el.textContent),
+        values: [...document.querySelectorAll('.usage-pct')].map(el => el.textContent) };
+    };
+    window.acquireVsCodeApi = () => ({ postMessage(message) {
+      if (message.type === 'ready') {
+        queueMicrotask(() => send({ type: 'init', layout: null, settings, alive: [], exited: [], showUsage: true }));
+      }
+      if (message.type === 'spawn') {
+        setTimeout(() => send({ type: 'data', termId: message.termId,
+          data: 'Terminal de prueba\r\n\r\nEl indicador conserva su espacio antes y despues de abrir un agente.\r\n\r\n> ' }), 20);
+        setTimeout(() => {
+          const before = measure();
+          const now = Date.now();
+          const fresh = { id: 'claude', label: 'Claude', windows: [
+            { label: '5h', percent: 0.25, resetsAt: now / 1000 + 5400 },
+            { label: '7d', percent: 0.12, resetsAt: now / 1000 + 86400 },
+          ], updatedAt: now };
+          const codex = { id: 'codex', label: 'Codex', plan: 'pro', windows: [
+            { label: '5h', percent: 0.2 }, { label: 'semana', percent: 0.81, resetsAt: now / 1000 + 266400 },
+          ], updatedAt: now };
+          const stale = { id: 'claude', label: 'Claude', windows: [
+            { label: '5h', stale: true }, { label: '7d', percent: 0.11, stale: true },
+          ], detail: 'Sin actualizar', updatedAt: now - 16 * 3600000 };
+          const items = scenario === 'both' ? [fresh, codex] : scenario === 'claude' ? [fresh]
+            : scenario === 'stale' ? [stale, codex] : [];
+          send({ type: 'usage', showUsage: true, usage: { items, updatedAt: now } });
+          setTimeout(() => {
+            document.getElementById('measurements').textContent = JSON.stringify({ scenario, before, after: measure() });
+          }, 100);
+        }, 300);
+      }
+    } });
+  </script>
+  <script src="../../dist/webview.js"></script>
+</body>
+</html>

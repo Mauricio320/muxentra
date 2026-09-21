@@ -606,7 +606,7 @@ body.pane-dragging * {
   position: absolute;
   inset: 0 auto 0 0;
   display: block;
-  min-width: 2px;
+  min-width: 0;
   border-radius: inherit;
   background: linear-gradient(90deg, color-mix(in srgb, currentColor 72%, white), currentColor);
   box-shadow: 0 0 8px color-mix(in srgb, currentColor 38%, transparent);
@@ -623,6 +623,14 @@ body.pane-dragging * {
 
 .usage-win.crit {
   color: var(--vscode-charts-red, #f14c4c);
+}
+
+.usage-win.pending {
+  color: var(--vscode-descriptionForeground);
+}
+
+.usage-win.pending .usage-bar {
+  background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, currentColor 18%, transparent) 3px 6px);
 }
 
 .usage-win.stale .usage-bar,
@@ -679,6 +687,12 @@ body.pane-dragging * {
 .usage-spacer {
   flex: 1 1 auto;
   min-width: 2px;
+}
+
+.usage-detail.status.pending {
+  color: var(--vscode-descriptionForeground);
+  border-color: var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
+  background: transparent;
 }
 
 .usage-refresh {

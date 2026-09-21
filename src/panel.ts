@@ -74,9 +74,11 @@ export class MuxentraPanel {
 
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pending = new Map<string, string[]>();
+  private readonly receiving = new Set<string>();
   private readonly attachDims = new Map<string, { cols: number; rows: number }>();
   private flushScheduled = false;
   private usageTimer: NodeJS.Timeout | undefined;
+  private usageRefreshTimer: NodeJS.Timeout | undefined;
   private branchTimer: NodeJS.Timeout | undefined;
   /** Directorio actual y última rama enviada, por terminal. */
   private readonly cwds = new Map<string, string>();
@@ -126,6 +128,7 @@ export class MuxentraPanel {
           e.affectsConfiguration('editor.fontSize')
         ) {
           this.post({ type: 'settings', settings: currentSettings() });
+          this.ptys.configure(currentSettings().scrollback);
         }
         if (e.affectsConfiguration('muxentra.showUsage') || e.affectsConfiguration('muxentra.usageRefreshSeconds')) {
           this.restartUsageTimer();
@@ -136,20 +139,25 @@ export class MuxentraPanel {
     );
 
     ptys.attach({
-      onData: (termId, data) => this.enqueue(termId, data),
+      onData: (termId, data) => {
+        if (this.receiving.has(termId)) this.enqueue(termId, data);
+      },
+      onGeometry: (termId, geometry) => this.post({ type: 'geometry', termId, geometry }),
       onExit: (termId, code) => {
         this.flush();
         this.clearActivity(termId);
         this.post({ type: 'exit', termId, code });
       },
-      onAttached: (termId, found, data) => {
+      onAttached: (termId, found, data, snapshot) => {
         const dims = this.attachDims.get(termId) ?? { cols: 80, rows: 24 };
         this.attachDims.delete(termId);
         if (!found) {
           void this.spawn(termId, dims.cols, dims.rows);
           return;
         }
-        if (data) this.post({ type: 'data', termId, data });
+        this.pending.delete(termId);
+        this.post({ type: 'restore', termId, snapshot: snapshot ?? { ...dims, data: data ?? '' } });
+        this.receiving.add(termId);
       },
       onSpawnError: (termId, message) => {
         this.post({ type: 'spawnError', termId, message });
@@ -157,6 +165,7 @@ export class MuxentraPanel {
       },
       onLost: () => {
         this.pending.clear();
+        this.receiving.clear();
         this.post({ type: 'serverLost' });
       },
     });
@@ -335,12 +344,25 @@ export class MuxentraPanel {
     }
   }
 
+  private refreshUsageSoon(): void {
+    if (this.usageRefreshTimer || !usageEnabled() || !this.panel.visible) return;
+    this.usageRefreshTimer = setTimeout(() => {
+      this.usageRefreshTimer = undefined;
+      if (this.panel.visible) this.sendUsage();
+    }, 1500);
+  }
+
   private async onMessage(m: WebviewMessage): Promise<void> {
     switch (m.type) {
       case 'ready': {
         const layout = this.ctx.workspaceState.get<WorkspaceLayout>(LAYOUT_KEY) ?? null;
         try {
           await this.ptys.ready();
+          if (!this.ptys.supportsStateReplay()) {
+            void vscode.window.showWarningMessage(
+              'Muxentra está conectado a un servidor anterior. La corrección del historial se aplicará al cerrar tus terminales y reiniciar el servidor; las sesiones actuales se conservan.',
+            );
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           log().error(message);
@@ -365,6 +387,8 @@ export class MuxentraPanel {
         this.setCwd(m.termId, workingDirectory());
         break;
       case 'attach':
+        this.receiving.delete(m.termId);
+        this.pending.delete(m.termId);
         if (!this.cwds.has(m.termId)) this.setCwd(m.termId, workingDirectory());
         this.attachDims.set(m.termId, { cols: m.cols, rows: m.rows });
         try {
@@ -376,11 +400,13 @@ export class MuxentraPanel {
         break;
       case 'input':
         this.ptys.write(m.termId, m.data);
+        if (/[\r\n]/.test(m.data)) this.refreshUsageSoon();
         break;
       case 'resize':
         this.ptys.resize(m.termId, m.cols, m.rows);
         break;
       case 'kill':
+        this.receiving.delete(m.termId);
         this.ptys.kill(m.termId);
         this.cwds.delete(m.termId);
         this.branches.delete(m.termId);
@@ -391,6 +417,7 @@ export class MuxentraPanel {
         break;
       case 'activity':
         this.setActivity(m.termId, m.state, m.label, m.message, m.silent);
+        if (m.state === 'done') this.refreshUsageSoon();
         break;
       case 'layout':
         void this.ctx.workspaceState.update(LAYOUT_KEY, m.layout);
@@ -405,6 +432,7 @@ export class MuxentraPanel {
   }
 
   private async spawn(termId: string, cols: number, rows: number): Promise<void> {
+    this.receiving.add(termId);
     try {
       await this.ptys.spawn(termId, cols, rows);
     } catch (err) {
@@ -449,6 +477,8 @@ export class MuxentraPanel {
     MuxentraPanel.current = undefined;
     if (this.usageTimer) clearInterval(this.usageTimer);
     this.usageTimer = undefined;
+    if (this.usageRefreshTimer) clearTimeout(this.usageRefreshTimer);
+    this.usageRefreshTimer = undefined;
     if (this.branchTimer) clearInterval(this.branchTimer);
     this.branchTimer = undefined;
     this.ptys.detach();

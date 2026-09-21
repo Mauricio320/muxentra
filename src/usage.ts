@@ -1,6 +1,6 @@
 // Lee el uso de Claude Code y de OpenAI Codex desde los datos que cada
 // herramienta deja en el disco. Todo es de solo lectura y tolerante a fallos:
-// si una fuente no existe, ese elemento simplemente no se muestra.
+// si una fuente aún no tiene porcentajes, se indica sin inventar un consumo.
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -10,16 +10,16 @@ import type { UsageItem, UsageSnapshot, UsageWindow } from './protocol';
 const CLAUDE_HOME = path.join(os.homedir(), '.claude');
 const CODEX_HOME = path.join(os.homedir(), '.codex');
 
-/** Antigüedad máxima del cache de Claude antes de preferir el conteo local de tokens. */
+/** A partir de esta edad se identifica el dato como antiguo, sin ocultarlo. */
 const CLAUDE_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CLAUDE_TOKEN_WINDOW_MS = 5 * 60 * 60 * 1000;
 
-export function readUsage(): UsageSnapshot {
+export function readUsage(homes = { claude: CLAUDE_HOME, codex: CODEX_HOME }): UsageSnapshot {
   const items: UsageItem[] = [];
-  const claude = safe(readClaude, 'claude');
-  if (claude) items.push(claude);
-  const codex = safe(readCodex, 'codex');
-  if (codex) items.push(codex);
+  for (const id of ['claude', 'codex'] as const) {
+    const item = safe(() => id === 'claude' ? readClaude(homes.claude) : readCodex(homes.codex), id);
+    items.push(item ?? { id, label: id === 'claude' ? 'Claude' : 'Codex', windows: [], detail: 'Sin datos de cuota' });
+  }
   return { items, updatedAt: Date.now() };
 }
 
@@ -44,42 +44,47 @@ interface ClaudeCache {
   };
 }
 
-function readClaude(): UsageItem | undefined {
-  const fromCache = readClaudeCache();
+function readClaude(home: string): UsageItem | undefined {
+  let fromCache: UsageItem | undefined;
+  try {
+    fromCache = readClaudeCache(home);
+  } catch {
+    // La fuente puede estar a medio escribir: conservar el estado de espera.
+  }
   if (fromCache) return fromCache;
-  return readClaudeTokens();
+  return readClaudeTokens(home);
 }
 
 /**
  * Cache que escribe la extensión de estado de Claude a partir de las cabeceras
  * de límite de la API. Es la única fuente local con el porcentaje real del plan.
  */
-function readClaudeCache(): UsageItem | undefined {
-  const file = path.join(CLAUDE_HOME, 'vscode-claude-status-cache.json');
+function readClaudeCache(home: string): UsageItem | undefined {
+  const file = path.join(home, 'vscode-claude-status-cache.json');
   if (!fs.existsSync(file)) return undefined;
   const cache = JSON.parse(fs.readFileSync(file, 'utf8')) as ClaudeCache;
   const data = cache.usageData;
   if (!data) return undefined;
 
   const updatedAt = cache.updatedAt ? Date.parse(cache.updatedAt) : NaN;
-  if (Number.isFinite(updatedAt) && Date.now() - updatedAt > CLAUDE_CACHE_MAX_AGE_MS) return undefined;
+  const outdated = !Number.isFinite(updatedAt) || Date.now() - updatedAt > CLAUDE_CACHE_MAX_AGE_MS;
 
   // El cache solo se reescribe cuando la extensión de Claude vuelve a consultar
   // la API. Si una ventana ya se reinició desde entonces, su porcentaje es de
-  // antes del reinicio y engaña: se muestra en cero y sin cuenta atrás hasta
+  // antes del reinicio y engaña: se muestra pendiente y sin cuenta atrás hasta
   // que llegue un dato nuevo.
   const nowSec = Date.now() / 1000;
   const windows: UsageWindow[] = [];
   const rolled: string[] = [];
   const add = (label: string, utilization: unknown, resetsAt: unknown): void => {
-    if (typeof utilization !== 'number') return;
-    const reset = typeof resetsAt === 'number' ? resetsAt : undefined;
+    if (typeof utilization !== 'number' || !Number.isFinite(utilization)) return;
+    const reset = typeof resetsAt === 'number' && Number.isFinite(resetsAt) ? resetsAt : undefined;
     if (reset !== undefined && reset <= nowSec) {
-      windows.push({ label, percent: 0, stale: true });
+      windows.push({ label, stale: true });
       rolled.push(label);
       return;
     }
-    windows.push({ label, percent: clamp01(utilization), resetsAt: reset });
+    windows.push({ label, percent: clamp01(utilization), resetsAt: reset, stale: outdated || undefined });
   };
   add('5h', data.utilization5h, data.reset5hAt);
   add('7d', data.utilization7d, data.reset7dAt);
@@ -91,7 +96,7 @@ function readClaudeCache(): UsageItem | undefined {
     windows,
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
     // El aviso de límite acompaña al porcentaje viejo; sin él no dice nada.
-    detail: rolled.length
+    detail: outdated ? 'Sin actualizar' : rolled.length
       ? `${rolled.join(' y ')} ${rolled.length > 1 ? 'reiniciadas' : 'reiniciada'}`
       : claudeLimitDetail(data.limitStatus),
   };
@@ -112,8 +117,8 @@ function claudeLimitDetail(status: string | undefined): string | undefined {
 }
 
 /** Respaldo: suma los tokens de las transcripciones de las últimas 5 horas. */
-function readClaudeTokens(): UsageItem | undefined {
-  const projects = path.join(CLAUDE_HOME, 'projects');
+function readClaudeTokens(home: string): UsageItem | undefined {
+  const projects = path.join(home, 'projects');
   if (!fs.existsSync(projects)) return undefined;
   const since = Date.now() - CLAUDE_TOKEN_WINDOW_MS;
 
@@ -173,19 +178,31 @@ interface CodexWindow {
  * Codex escribe eventos token_count con rate_limits en el rollout de cada
  * sesión; se toma el último del archivo de sesión más reciente.
  */
-function readCodex(): UsageItem | undefined {
-  const sessions = path.join(CODEX_HOME, 'sessions');
+function readCodex(home: string): UsageItem | undefined {
+  const sessions = path.join(home, 'sessions');
   if (!fs.existsSync(sessions)) return undefined;
-  const newest = newestFile(sessions, name => name.startsWith('rollout-') && name.endsWith('.jsonl'));
-  if (!newest) return undefined;
+  // Abrir una sesión crea el archivo antes del primer evento de límites.
+  // Consultar también sesiones anteriores evita que desaparezca el indicador.
+  const candidates = newestFiles(sessions, name => name.startsWith('rollout-') && name.endsWith('.jsonl'));
+  for (const candidate of candidates) {
+    const item = readCodexFile(candidate);
+    if (item) return item;
+  }
+  return undefined;
+}
 
-  const lines = readTail(newest.file, 1024 * 1024).split('\n');
+function readCodexFile(candidate: { file: string; mtime: number }): UsageItem | undefined {
+  const lines = readTail(candidate.file, 1024 * 1024).split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (!line.includes('"rate_limits"')) continue;
     let limits: CodexRateLimits | undefined;
+    let updatedAt: number | undefined;
     try {
-      limits = findRateLimits(JSON.parse(line));
+      const event = JSON.parse(line);
+      limits = findRateLimits(event);
+      const timestamp = typeof event?.timestamp === 'string' ? Date.parse(event.timestamp) : NaN;
+      updatedAt = Number.isFinite(timestamp) ? timestamp : undefined;
     } catch {
       continue;
     }
@@ -193,11 +210,14 @@ function readCodex(): UsageItem | undefined {
 
     const windows: UsageWindow[] = [];
     for (const w of [limits.primary, limits.secondary]) {
-      if (!w || typeof w.used_percent !== 'number') continue;
+      if (!w || typeof w.used_percent !== 'number' || !Number.isFinite(w.used_percent)) continue;
+      const reset = typeof w.resets_at === 'number' && Number.isFinite(w.resets_at) ? w.resets_at : undefined;
+      const expired = reset !== undefined && reset <= Date.now() / 1000;
       windows.push({
         label: windowLabel(w.window_minutes),
-        percent: clamp01(w.used_percent / 100),
-        resetsAt: typeof w.resets_at === 'number' ? w.resets_at : undefined,
+        percent: expired ? undefined : clamp01(w.used_percent / 100),
+        resetsAt: expired ? undefined : reset,
+        stale: expired || undefined,
       });
     }
     if (windows.length === 0) continue;
@@ -206,7 +226,7 @@ function readCodex(): UsageItem | undefined {
       label: 'Codex',
       windows,
       plan: limits.plan_type ?? undefined,
-      updatedAt: newest.mtime,
+      updatedAt,
     };
   }
   return undefined;
@@ -235,14 +255,14 @@ function windowLabel(minutes: number | undefined): string {
 
 // ---------------------------------------------------------------- utilidades
 
-/** Busca el archivo más reciente que cumpla `match`, sin recorrer todo el árbol. */
-function newestFile(
+/** Candidatos recientes, con recorrido y lecturas acotados. */
+function newestFiles(
   root: string,
   match: (name: string) => boolean,
   depth = 0,
-): { file: string; mtime: number } | undefined {
-  if (depth > 6) return undefined;
-  let best: { file: string; mtime: number } | undefined;
+): { file: string; mtime: number }[] {
+  if (depth > 6) return [];
+  const files: { file: string; mtime: number }[] = [];
   const dirs: { dir: string; mtime: number }[] = [];
 
   for (const entry of readDirSafe(root)) {
@@ -251,17 +271,16 @@ function newestFile(
       dirs.push({ dir: full, mtime: statMtime(full) });
     } else if (entry.isFile() && match(entry.name)) {
       const mtime = statMtime(full);
-      if (!best || mtime > best.mtime) best = { file: full, mtime };
+      files.push({ file: full, mtime });
     }
   }
 
   // Solo se desciende por las carpetas más recientes: las sesiones se guardan por fecha.
   dirs.sort((a, b) => b.mtime - a.mtime);
   for (const { dir } of dirs.slice(0, 3)) {
-    const found = newestFile(dir, match, depth + 1);
-    if (found && (!best || found.mtime > best.mtime)) best = found;
+    files.push(...newestFiles(dir, match, depth + 1));
   }
-  return best;
+  return files.sort((a, b) => b.mtime - a.mtime).slice(0, 12);
 }
 
 /** Últimos `maxBytes` del archivo, descartando la primera línea parcial. */

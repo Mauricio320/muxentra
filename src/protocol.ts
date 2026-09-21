@@ -34,6 +34,18 @@ export interface WorkspaceLayout {
   tabs: TabState[];
   activeTabId: string;
   nextTabNumber: number;
+  terminalSizes?: Record<string, { cols: number; rows: number }>;
+}
+
+export interface TerminalGeometry {
+  cols: number;
+  rows: number;
+  /** Capacidad del backend real, que puede ser distinto del ConPTY del SO. */
+  windowsPty?: { backend: 'conpty'; buildNumber: number };
+}
+
+export interface TerminalSnapshot extends TerminalGeometry {
+  data: string;
 }
 
 export interface TermSettings {
@@ -44,7 +56,7 @@ export interface TermSettings {
   fontWeight: TerminalFontWeight;
   fontWeightBold: TerminalFontWeight;
   scrollback: number;
-  /** Vaciar el historial cuando un programa reescribe su transcripción entera tras un cambio de tamaño. */
+  /** Usar ConPTY moderno en Windows para preservar las secuencias de las TUI. */
   rebuildAwareScrollback: boolean;
   cursorBlink: boolean;
   platform: string;
@@ -75,11 +87,11 @@ export type TerminalFontWeight =
 export interface UsageWindow {
   /** Etiqueta corta de la ventana: "5h", "7d", "semana". */
   label: string;
-  /** 0 a 1. */
-  percent: number;
+  /** 0 a 1; ausente cuando aún no hay un porcentaje para esta ventana. */
+  percent?: number;
   /** Epoch en segundos en que se reinicia la ventana. */
   resetsAt?: number;
-  /** La ventana ya se reinició después de escribirse el dato: se muestra en cero hasta que llegue uno nuevo. */
+  /** Dato antiguo o ventana reiniciada: no representa una medición actual. */
   stale?: boolean;
 }
 
@@ -166,6 +178,8 @@ export type HostMessage =
       showUsage: boolean;
     }
   | { type: 'data'; termId: string; data: string }
+  | { type: 'restore'; termId: string; snapshot: TerminalSnapshot }
+  | { type: 'geometry'; termId: string; geometry: TerminalGeometry }
   | { type: 'exit'; termId: string; code: number }
   | { type: 'spawnError'; termId: string; message: string }
   /** Se perdió el servidor de terminales: todas las terminales deben reiniciar su shell. */

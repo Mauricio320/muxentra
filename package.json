@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales múltiples, splits anidados y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -266,12 +266,13 @@
           "type": "number",
           "default": 20000,
           "minimum": 100,
+          "maximum": 100000,
           "description": "Líneas de historial que conserva cada terminal."
         },
         "muxentra.rebuildAwareScrollback": {
           "type": "boolean",
           "default": true,
-          "description": "Cuando un programa reescribe toda su transcripción justo después de un cambio de tamaño (Codex lo hace en cada resize), vacía el historial de esa terminal antes de recibirla, para que quede una sola copia en vez de una por cada resize."
+          "description": "Usa el ConPTY moderno incluido en Windows para evitar repintados duplicados de agentes TUI. Se aplica al crear terminales nuevas; desactivado usa el ConPTY del sistema. Nunca borra historial por la cantidad de salida."
         },
         "muxentra.showUsage": {
           "type": "boolean",
@@ -350,6 +351,8 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit -p ./",
+    "test:terminal": "node tools/terminal-regression.cjs",
+    "test:usage": "node tools/usage-regression.cjs",
     "package": "vsce package"
   },
   "dependencies": {
@@ -360,7 +363,9 @@
     "@types/vscode": "1.100.0",
     "@vscode/vsce": "^4.0.0",
     "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-serialize": "0.14.0",
     "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/headless": "6.0.0",
     "@xterm/xterm": "6.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.0"

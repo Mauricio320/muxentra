@@ -17,11 +17,13 @@ import {
   type ServerMessage,
 } from './serverProtocol';
 import { resolveShell } from './shell';
+import type { TerminalGeometry, TerminalSnapshot } from './protocol';
 
 export interface PtyListeners {
   onData?: (id: string, data: string) => void;
   onExit?: (id: string, code: number) => void;
-  onAttached?: (id: string, found: boolean, data: string | undefined) => void;
+  onAttached?: (id: string, found: boolean, data: string | undefined, snapshot?: TerminalSnapshot) => void;
+  onGeometry?: (id: string, geometry: TerminalGeometry) => void;
   onSpawnError?: (id: string, message: string) => void;
   /** Se perdió la conexión con el servidor: todas las terminales se dan por muertas. */
   onLost?: () => void;
@@ -51,6 +53,7 @@ export class PtyClient {
   private readonly exitedWhileDetached = new Set<string>();
   private listeners: PtyListeners = {};
   private disposed = false;
+  private stateReplay = false;
   private readonly pipePath: string;
   private readonly tokenFile: string;
   private readonly token: string;
@@ -71,6 +74,15 @@ export class PtyClient {
 
   aliveIds(): string[] {
     return [...this.alive];
+  }
+
+  supportsStateReplay(): boolean {
+    return this.stateReplay;
+  }
+
+  configure(scrollback: number): void {
+    if (!this.stateReplay) return;
+    for (const id of this.alive) this.send({ t: 'configure', id, scrollback });
   }
 
   takeExited(): string[] {
@@ -96,12 +108,18 @@ export class PtyClient {
     const cwd = workingDirectory();
     log().info(`spawn ${id}: "${shell.path}" ${shell.args.join(' ')} (${cols}x${rows}) en ${cwd}`);
     this.alive.add(id);
-    this.send({ t: 'spawn', id, file: shell.path, args: shell.args, cwd, env: buildEnv(), cols, rows });
+    const config = vscode.workspace.getConfiguration('muxentra');
+    this.send({ t: 'spawn', id, file: shell.path, args: shell.args, cwd, env: buildEnv(), cols, rows,
+      scrollback: config.get<number>('scrollback') ?? 20000,
+      useConptyDll: config.get<boolean>('rebuildAwareScrollback') ?? true,
+    });
   }
 
   async attachTerminal(id: string, cols: number, rows: number): Promise<void> {
     await this.ready();
-    this.send({ t: 'attach', id, cols, rows });
+    this.send({ t: 'attach', id, cols, rows,
+      scrollback: vscode.workspace.getConfiguration('muxentra').get<number>('scrollback') ?? 20000,
+    });
   }
 
   write(id: string, data: string): void {
@@ -277,12 +295,13 @@ export class PtyClient {
 
       sock.on('data', onData);
       sock.once('error', onError);
-      sock.write(JSON.stringify({ t: 'hello', version: PROTOCOL_VERSION, nonce: clientNonce } satisfies ClientMessage) + '\n');
+      sock.write(JSON.stringify({ t: 'hello', version: PROTOCOL_VERSION, nonce: clientNonce, stateReplay: true } satisfies ClientMessage) + '\n');
     });
   }
 
   private adopt(sock: net.Socket, welcome: Extract<ServerMessage, { t: 'welcome' }>): void {
     this.sock = sock;
+    this.stateReplay = welcome.stateReplay === true;
     this.alive.clear();
     for (const id of welcome.alive) this.alive.add(id);
     for (const id of welcome.exited) this.exitedWhileDetached.add(id);
@@ -332,6 +351,7 @@ export class PtyClient {
       case 'spawned':
         this.alive.add(msg.id);
         log().info(`spawned ${msg.id}: pid ${msg.pid}`);
+        if (msg.geometry) this.listeners.onGeometry?.(msg.id, msg.geometry);
         break;
       case 'spawnError':
         this.alive.delete(msg.id);
@@ -340,7 +360,7 @@ export class PtyClient {
         break;
       case 'attached':
         if (!msg.found) this.alive.delete(msg.id);
-        this.listeners.onAttached?.(msg.id, msg.found, msg.data);
+        this.listeners.onAttached?.(msg.id, msg.found, msg.data, msg.snapshot);
         break;
       case 'challenge':
       case 'welcome':

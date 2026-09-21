@@ -1,5 +1,55 @@
 # Dossier: historial duplicado y scroll corto con agentes TUI
 
+## Corrección del diagnóstico y de la implementación (2026-09-20)
+
+Las conclusiones originales que atribuyen toda la duplicación a los agentes
+deben leerse como hipótesis superadas por la comparación de los dos backends.
+La sonda original no contaba `ESC[H`, heredaba `TERM` del entorno y no respondía
+consultas de terminal. Medía bytes, no el resultado de interpretarlos.
+
+La sonda corregida usa xterm 6, responde DSR/DA, fija `TERM=xterm-256color` y mide
+el buffer renderizado. Se compararon `useConptyDll=false` y `true`, con la DLL
+1.23.2510.08001 que ya incluye node-pty 1.1.0. No se enviaron prompts.
+
+- Programa estático: el ConPTY del sistema retransmite 29 líneas después de
+  estrechar, pero `ESC[H` permite conservar exactamente 1000 líneas únicas.
+  La DLL no retransmite contenido al estrechar. Bytes repetidos no implican
+  por sí solos historial duplicado.
+- Claude, pantalla inicial de confianza: el backend del sistema pasa de una a
+  dos apariciones de la cabecera al reducir la altura. Con la DLL conserva una,
+  y llegan pantalla alternativa, posicionamiento y secuencias del ratón.
+  No se aceptó la confianza ni se verificó una conversación de Claude.
+- Codex, `resume --last` de la sesión disponible: el sistema deja `baseY=0` al
+  arrancar y `baseY=10` tras reducir altura. Con la DLL hay 59 líneas de historial
+  al arrancar, 69 tras reducir altura y 78 al estrechar. El resize transmite
+  `ED2`, `ED3` y regiones de scroll; con el backend del sistema no llegaban.
+  Esta sesión no es la transcripción larga citada más abajo.
+
+Cambios actuales:
+
+- ConPTY incluido habilitado por defecto en terminales nuevas de Windows.
+  `rebuildAwareScrollback=false` vuelve al backend del sistema. Se informa a
+  xterm de la capacidad del backend real, no solo del build de Windows.
+- Eliminado el borrado heurístico por número de líneas.
+- `TerminalState` conserva estado VT y hasta las líneas configuradas de
+  historial, en lugar de recortar un registro ANSI a 1 MB. El snapshot incluye
+  buffers, cursor, modos, región de scroll y prefijos ANSI aún incompletos.
+- Salida, snapshots y resize se ordenan; la salida se agrupa mientras espera al
+  parser para evitar latencia por cada fragmento. El webview retiene la salida
+  nueva hasta terminar de restaurar y no devuelve respuestas del replay al PTY.
+- Attach no redimensiona el proceso. Se restaura con sus dimensiones originales
+  y solo después se ajustan paneles visibles; los ocultos conservan su tamaño.
+- Se mantiene compatibilidad con el servidor anterior sin matar sesiones para
+  actualizarlo. La extensión avisa cuando sigue conectada a ese servidor.
+
+Validación reproducible: `npm run typecheck`, `npm run build` y
+`npm run test:terminal`. La regresión usa un servidor y un PTY independientes:
+15.000 líneas y más de 1 MB, salida normal tras resize, pantalla alternativa,
+ANSI partido entre chunks, barrera del snapshot y tres reconexiones conservando
+1000 líneas únicas y el tamaño. Falta revisión visual dentro de VS Code.
+
+## Investigación anterior (conservar como referencia histórica)
+
 Estado al 2026-09-20. Escrito para quien retome este problema (persona o modelo) sin contexto previo. Todo lo que dice "medido" se obtuvo con `tools/pty-probe.cjs` en esta máquina (Windows 10, Codex 0.155.0, Claude Code 2.1.278).
 
 ## Síntoma

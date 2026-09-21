@@ -12,6 +12,7 @@ import type {
   SplitNode,
   TabState,
   TermSettings,
+  TerminalSnapshot,
   UsageItem,
   UsageSnapshot,
   WebviewMessage,
@@ -70,17 +71,11 @@ interface Pane {
   quietTimer?: number;
   /** Veces que el usuario movió la vista con la rueda o la barra; distingue su scroll del de la aplicación. */
   userScroll: number;
-  /** Hasta cuándo una ráfaga grande se toma como reescritura de la transcripción (tras resize o reconexión). */
-  rebuildWatchUntil: number;
-  /** Trozos retenidos mientras se decide si la ráfaga es una reescritura. */
-  rebuildHeld: string[];
-  rebuildHeldLines: number;
-  rebuildHoldTimer: number | undefined;
-  /** Esperando a que xterm vacíe su cola antes de limpiar; los trozos siguen reteniéndose. */
-  rebuildClearing: boolean;
-  /** Distancia al final que tenía el usuario al empezar; se recupera cuando la reescritura termina. */
-  rebuildDistance: number | undefined;
-  rebuildQuietTimer: number | undefined;
+  /** Replay uses the original geometry without sending terminal responses. */
+  restoring: boolean;
+  restorePending: string[];
+  restoreGeneration: number;
+
 }
 
 const ICONS = {
@@ -162,6 +157,9 @@ function persist(): void {
   if (persistTimer !== undefined) window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(() => {
     persistTimer = undefined;
+    state.terminalSizes = Object.fromEntries([...panes.values()].map(pane => [pane.termId,
+      { cols: pane.term.cols, rows: pane.term.rows },
+    ]));
     post({ type: 'layout', layout: structuredClone(state) });
   }, 150);
 }
@@ -353,19 +351,16 @@ function ensurePane(termId: string): Pane {
     ignoreUntil: 0,
     ticks: [],
     userScroll: 0,
-    rebuildWatchUntil: 0,
-    rebuildHeld: [],
-    rebuildHeldLines: 0,
-    rebuildHoldTimer: undefined,
-    rebuildClearing: false,
-    rebuildDistance: undefined,
-    rebuildQuietTimer: undefined,
+    restoring: false,
+    restorePending: [],
+    restoreGeneration: 0,
   };
   panes.set(termId, pane);
   pane.observer.observe(mount);
 
   el.addEventListener('mousedown', () => focusPane(termId), true);
   term.onData(data => {
+    if (pane.restoring || !pane.started) return;
     noteInput(pane);
     post({ type: 'input', termId, data });
   });
@@ -404,8 +399,8 @@ function ensurePane(termId: string): Pane {
   });
   term.onResize(({ cols, rows }) => {
     if (!pane.started) return;
-    armRebuildWatch(pane, REBUILD_WATCH_RESIZE_MS);
     post({ type: 'resize', termId, cols, rows });
+    persist();
   });
   for (const type of ['wheel', 'mousedown'] as const) {
     mount.addEventListener(type, () => { pane.userScroll++; }, { passive: true });
@@ -756,7 +751,7 @@ function scheduleFit(pane: Pane): void {
   if (pane.fitTimer !== undefined) window.clearTimeout(pane.fitTimer);
   pane.fitTimer = window.setTimeout(() => {
     pane.fitTimer = undefined;
-    if (!pane.opened) return;
+    if (!pane.opened || pane.restoring || !pane.started) return;
     if (pane.mount.clientWidth === 0 || pane.mount.clientHeight === 0) return;
     const view = readingPosition(pane);
     pane.fit.fit();
@@ -798,92 +793,29 @@ function writeKeepingView(pane: Pane, data: string): void {
   pane.term.write(data, () => restoreReadingPosition(pane, view));
 }
 
-// ---------------------------------------------------------------- reescritura tras resize
+// ---------------------------------------------------------------- replay
 
-/**
- * Codex vuelve a escribir su transcripción completa (miles de líneas) cada
- * vez que cambia el tamaño de la terminal, sin borrar la copia anterior. Cada
- * copia empuja la anterior fuera del historial y deja bloques repetidos. Si
- * justo después de un cambio de tamaño llega una ráfaga de cientos de líneas,
- * se vacía el historial antes de escribirla, para que quede una sola copia.
- */
-const REBUILD_WATCH_RESIZE_MS = 2000;
-const REBUILD_WATCH_ATTACH_MS = 4000;
-/** Cuánto se retiene la salida mientras se decide, para no perder el principio de la reescritura. */
-const REBUILD_HOLD_MS = 120;
-/** Líneas seguidas a partir de las que la ráfaga se toma como reescritura. */
-const REBUILD_MIN_LINES = 250;
-/** Silencio tras el que la reescritura se da por terminada. */
-const REBUILD_QUIET_MS = 300;
-
-function armRebuildWatch(pane: Pane, windowMs: number): void {
-  if (!settings.rebuildAwareScrollback) return;
-  const buf = pane.term.buffer.active;
-  pane.rebuildDistance = buf.viewportY < buf.baseY ? buf.baseY - buf.viewportY : undefined;
-  pane.rebuildWatchUntil = Date.now() + windowMs;
-}
-
-function countNewlines(data: string): number {
-  let n = 0;
-  for (let i = data.indexOf('\n'); i !== -1; i = data.indexOf('\n', i + 1)) n++;
-  return n;
-}
-
-/** Devuelve true si se quedó con el trozo; false si hay que escribirlo normalmente. */
-function holdForRebuild(pane: Pane, data: string): boolean {
-  if (pane.rebuildClearing) {
-    pane.rebuildHeld.push(data);
-    return true;
-  }
-  if (pane.rebuildQuietTimer !== undefined) {
-    // Reescritura en curso: pasa directo y se reinicia el detector de silencio.
-    window.clearTimeout(pane.rebuildQuietTimer);
-    pane.rebuildQuietTimer = window.setTimeout(() => settleRebuild(pane), REBUILD_QUIET_MS);
-    return false;
-  }
-  if (Date.now() > pane.rebuildWatchUntil) return false;
-
-  pane.rebuildHeld.push(data);
-  pane.rebuildHeldLines += countNewlines(data);
-  if (pane.rebuildHeldLines >= REBUILD_MIN_LINES) {
-    if (pane.rebuildHoldTimer !== undefined) window.clearTimeout(pane.rebuildHoldTimer);
-    pane.rebuildHoldTimer = undefined;
-    // Fuera la copia vieja antes de recibir la nueva, pero solo cuando xterm haya
-    // parseado lo que ya tenía en cola. La vista sigue al final mientras llega;
-    // al terminar se recupera la distancia que tenía el usuario.
-    pane.rebuildClearing = true;
-    pane.term.write('', () => {
-      pane.rebuildClearing = false;
-      pane.userScroll++;
-      pane.term.clear();
-      flushHeld(pane);
-      pane.rebuildQuietTimer = window.setTimeout(() => settleRebuild(pane), REBUILD_QUIET_MS);
+function restoreTerminal(pane: Pane, snapshot: TerminalSnapshot): void {
+  const generation = ++pane.restoreGeneration;
+  pane.restoring = true;
+  pane.started = false;
+  pane.term.options.disableStdin = true;
+  // Drain pending writes before replacing the terminal state.
+  pane.term.write('', () => {
+    if (panes.get(pane.termId) !== pane || pane.restoreGeneration !== generation) return;
+    pane.term.reset();
+    if (snapshot.windowsPty) pane.term.options.windowsPty = snapshot.windowsPty;
+    pane.term.resize(snapshot.cols, snapshot.rows);
+    pane.term.write(snapshot.data, () => {
+      if (panes.get(pane.termId) !== pane || pane.restoreGeneration !== generation) return;
+      pane.restoring = false;
+      pane.started = true;
+      pane.term.options.disableStdin = false;
+      for (const data of pane.restorePending.splice(0)) writeKeepingView(pane, data);
+      scheduleFit(pane);
+      persist();
     });
-    return true;
-  }
-  if (pane.rebuildHoldTimer === undefined) {
-    pane.rebuildHoldTimer = window.setTimeout(() => {
-      // No llegó a ráfaga: era salida normal. Se sigue vigilando hasta que venza la ventana.
-      pane.rebuildHoldTimer = undefined;
-      flushHeld(pane);
-    }, REBUILD_HOLD_MS);
-  }
-  return true;
-}
-
-function flushHeld(pane: Pane): void {
-  const held = pane.rebuildHeld.splice(0);
-  pane.rebuildHeldLines = 0;
-  for (const chunk of held) writeKeepingView(pane, chunk);
-}
-
-function settleRebuild(pane: Pane): void {
-  pane.rebuildQuietTimer = undefined;
-  const distance = pane.rebuildDistance;
-  pane.rebuildDistance = undefined;
-  if (distance === undefined) return;
-  const buf = pane.term.buffer.active;
-  pane.term.scrollToLine(Math.max(0, buf.baseY - distance));
+  });
 }
 
 function fitVisible(): void {
@@ -897,8 +829,15 @@ function fitVisible(): void {
 
 function startPane(termId: string, attach: boolean): void {
   const pane = ensurePane(termId);
-  let cols = 80;
-  let rows = 24;
+  pane.restoreGeneration++;
+  pane.restoring = false;
+  pane.restorePending = [];
+  pane.term.options.disableStdin = false;
+  const saved = state.terminalSizes?.[termId];
+  let cols = saved && Number.isInteger(saved.cols) && saved.cols >= 2 && saved.cols <= 5000 ? saved.cols : 80;
+  let rows = saved && Number.isInteger(saved.rows) && saved.rows >= 1 && saved.rows <= 5000 ? saved.rows : 24;
+  pane.started = false;
+  pane.term.resize(cols, rows);
   if (pane.opened) {
     const dims = pane.fit.proposeDimensions();
     if (dims && dims.cols > 0 && dims.rows > 0) {
@@ -907,21 +846,16 @@ function startPane(termId: string, attach: boolean): void {
       rows = pane.term.rows;
     }
   }
-  pane.started = true;
+  pane.started = !attach;
   // Al reconectar llega de golpe todo el buffer guardado: no es trabajo nuevo.
   pane.ignoreUntil = Date.now() + REPLAY_GRACE_MS;
   pane.ticks = [];
-  // Al reconectar llegan dos ráfagas: el replay del servidor y, si cambió el
-  // tamaño, la reescritura del programa. La vigilancia cubre las dos.
-  if (attach) armRebuildWatch(pane, REBUILD_WATCH_ATTACH_MS);
   post({ type: attach ? 'attach' : 'spawn', termId, cols, rows });
 }
 
 function disposePane(pane: Pane): void {
   if (pane.quietTimer !== undefined) window.clearTimeout(pane.quietTimer);
   if (pane.fitTimer !== undefined) window.clearTimeout(pane.fitTimer);
-  if (pane.rebuildHoldTimer !== undefined) window.clearTimeout(pane.rebuildHoldTimer);
-  if (pane.rebuildQuietTimer !== undefined) window.clearTimeout(pane.rebuildQuietTimer);
   pane.observer.disconnect();
   pane.term.dispose();
   pane.el.remove();
@@ -1586,6 +1520,7 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
 // ---------------------------------------------------------------- barra de uso
 
 let showUsage = true;
+let usageSnapshot: UsageSnapshot | null = null;
 
 /** "2h 13m", "3d 22h" o "ahora" para el momento en que se reinicia una ventana. */
 function formatReset(resetsAt: number | undefined): string | undefined {
@@ -1607,17 +1542,20 @@ function severity(percent: number): string {
 }
 
 function renderUsage(snapshot: UsageSnapshot | null): void {
+  usageSnapshot = snapshot;
   if (!showUsage) {
     usageEl.hidden = true;
     usageEl.replaceChildren();
+    fitVisible();
     return;
   }
-  const items = (snapshot?.items ?? []).filter(i => i.windows.length > 0 || i.detail);
-  if (items.length === 0) {
-    usageEl.hidden = true;
-    usageEl.replaceChildren();
-    return;
-  }
+  // Reservar el espacio desde el inicio evita que la primera lectura cambie
+  // la altura de la terminal mientras el agente está dibujando su interfaz.
+  const items: UsageItem[] = (['claude', 'codex'] as const).map(id =>
+    snapshot?.items.find(item => item.id === id) ?? {
+      id, label: id === 'claude' ? 'Claude' : 'Codex', windows: [],
+    },
+  );
   usageEl.hidden = false;
   const spacer = document.createElement('span');
   spacer.className = 'usage-spacer';
@@ -1654,10 +1592,10 @@ function renderUsageItem(item: UsageItem): HTMLElement {
   provider.append(icon, identity);
   el.append(provider);
 
-  for (const w of item.windows) {
-    const percent = Math.round(w.percent * 100);
+  for (const w of item.windows.length ? item.windows : [{ label: 'uso', percent: undefined, stale: false }]) {
+    const percent = w.percent === undefined ? undefined : Math.round(w.percent * 100);
     const chunk = document.createElement('span');
-    chunk.className = `usage-win ${severity(w.percent)}${w.stale ? ' stale' : ''}`;
+    chunk.className = `usage-win ${w.percent === undefined ? 'pending' : severity(w.percent)}${w.stale ? ' stale' : ''}`;
 
     const name = document.createElement('span');
     name.className = 'usage-win-label';
@@ -1666,17 +1604,18 @@ function renderUsageItem(item: UsageItem): HTMLElement {
     const bar = document.createElement('span');
     bar.className = 'usage-bar';
     bar.setAttribute('role', 'progressbar');
-    bar.setAttribute('aria-label', `${item.label}, ${w.label}: ${percent}% consumido`);
+    bar.setAttribute('aria-label', `${item.label}, ${w.label}: ${percent === undefined ? 'pendiente de datos' : `${percent}% consumido${w.stale ? ', dato sin actualizar' : ''}`}`);
     bar.setAttribute('aria-valuemin', '0');
     bar.setAttribute('aria-valuemax', '100');
-    bar.setAttribute('aria-valuenow', String(percent));
+    if (percent !== undefined) bar.setAttribute('aria-valuenow', String(percent));
+    else bar.setAttribute('aria-valuetext', 'Pendiente de datos');
     const fill = document.createElement('i');
-    fill.style.width = `${percent}%`;
+    fill.style.width = `${percent ?? 0}%`;
     bar.append(fill);
 
     const value = document.createElement('span');
     value.className = 'usage-pct';
-    value.textContent = `${percent}%`;
+    value.textContent = percent === undefined ? '—' : `${percent}%`;
 
     chunk.append(name, bar, value);
     el.append(chunk);
@@ -1693,11 +1632,13 @@ function renderUsageItem(item: UsageItem): HTMLElement {
     el.append(resetEl);
   }
 
-  if (item.detail) {
+  const status = item.windows.length ? item.detail : item.error ? 'Lectura pendiente' : 'Sin datos de cuota';
+  if (status) {
     const detail = document.createElement('span');
     detail.className = 'usage-detail';
-    if (item.windows.length > 0) detail.classList.add('status');
-    detail.textContent = item.detail;
+    detail.classList.add('status');
+    if (!item.windows.length) detail.classList.add('pending');
+    detail.textContent = status;
     el.append(detail);
   }
 
@@ -1716,7 +1657,7 @@ function renderUsageRefresh(updatedAt: number | undefined): HTMLButtonElement {
   const label = document.createElement('span');
   label.className = 'usage-refresh-label';
   label.textContent = updatedAt
-    ? `Actualizado ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    ? `Consultado ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : 'Actualizar';
   button.append(label);
   button.addEventListener('click', ev => {
@@ -1731,11 +1672,13 @@ function usageTooltip(item: UsageItem): string {
   for (const w of item.windows) {
     const reset = formatReset(w.resetsAt);
     const when = w.resetsAt ? new Date(w.resetsAt * 1000).toLocaleString() : undefined;
-    lines.push(`${w.label}: ${Math.round(w.percent * 100)}%${reset ? ` · se reinicia en ${reset} (${when})` : ''}${w.stale ? ' · la ventana ya se reinició; sin dato nuevo todavía' : ''}`);
+    lines.push(`${w.label}: ${w.percent === undefined ? 'pendiente de un dato nuevo' : `${Math.round(w.percent * 100)}%`}${reset ? ` · se reinicia en ${reset} (${when})` : ''}${w.stale ? ' · sin actualizar' : ''}`);
   }
+  if (!item.windows.length) lines.push('Porcentaje de cuota no disponible. El conteo local de tokens no equivale al porcentaje del plan.');
   if (item.detail) lines.push(item.detail);
-  if (item.updatedAt) lines.push(`Dato de ${new Date(item.updatedAt).toLocaleTimeString()}`);
-  lines.push('Clic para actualizar.');
+  if (item.error) lines.push(item.error);
+  if (item.updatedAt) lines.push(`Dato de ${new Date(item.updatedAt).toLocaleString()}`);
+  lines.push('Clic para releer los datos locales disponibles.');
   return lines.join('\n');
 }
 
@@ -1746,10 +1689,12 @@ usageEl.addEventListener('click', () => post({ type: 'refreshUsage' }));
 async function onInit(msg: Extract<HostMessage, { type: 'init' }>): Promise<void> {
   await applySettings(msg.settings);
   showUsage = msg.showUsage;
+  renderUsage(usageSnapshot);
   const alive = new Set(msg.alive);
   const exited = new Set(msg.exited);
 
   if (msg.layout && Array.isArray(msg.layout.tabs)) {
+    state.terminalSizes = msg.layout.terminalSizes;
     state.tabs = [];
     for (const raw of msg.layout.tabs) {
       let root = L.sanitize(raw.root);
@@ -1798,7 +1743,22 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       const pane = panes.get(msg.termId);
       if (pane) {
         noteOutput(pane, msg.data);
-        if (!holdForRebuild(pane, msg.data)) writeKeepingView(pane, msg.data);
+        if (pane.restoring) pane.restorePending.push(msg.data);
+        else writeKeepingView(pane, msg.data);
+      }
+      break;
+    }
+    case 'restore': {
+      const pane = panes.get(msg.termId);
+      if (pane) restoreTerminal(pane, msg.snapshot);
+      break;
+    }
+    case 'geometry': {
+      const pane = panes.get(msg.termId);
+      if (pane) {
+        if (msg.geometry.windowsPty) pane.term.options.windowsPty = msg.geometry.windowsPty;
+        pane.started = true;
+        scheduleFit(pane);
       }
       break;
     }
