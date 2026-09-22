@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales múltiples, splits anidados y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -358,6 +358,7 @@
     "typecheck": "tsc --noEmit -p ./",
     "test:terminal": "node tools/terminal-regression.cjs",
     "test:usage": "node tools/usage-regression.cjs",
+    "test:focus": "node --experimental-strip-types tools/focusTimer-regression.mjs",
     "package": "vsce package"
   },
   "dependencies": {

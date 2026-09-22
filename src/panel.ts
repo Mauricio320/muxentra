@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { advanceFocusTimer, changeFocusTimer, completedFocusPhase, restoreFocusTimer, type FocusTimerState } from './focusTimer';
 import { normalizeCwd, readGitInfo } from './git';
 import { log } from './log';
 import type {
@@ -18,6 +19,8 @@ import { PtyClient, workingDirectory } from './ptyClient';
 import { fetchClaudeUsage, readUsage } from './usage';
 
 const LAYOUT_KEY = 'muxentra.layout';
+const LAST_NOTIFY_MODE_KEY = 'muxentra.lastNotifyMode';
+const FOCUS_TIMER_KEY = 'muxentra.focusTimer';
 
 export class MuxentraPanel {
   static readonly viewType = 'muxentra';
@@ -84,6 +87,8 @@ export class MuxentraPanel {
   private claudeLivePending = false;
   private claudeLiveAttemptAt = 0;
   private branchTimer: NodeJS.Timeout | undefined;
+  private focusTick: NodeJS.Timeout | undefined;
+  private focusTimer: FocusTimerState;
   /** Directorio actual y última rama enviada, por terminal. */
   private readonly cwds = new Map<string, string>();
   private readonly branches = new Map<string, string>();
@@ -97,6 +102,7 @@ export class MuxentraPanel {
     private readonly ctx: vscode.ExtensionContext,
     private readonly ptys: PtyClient,
   ) {
+    this.focusTimer = restoreFocusTimer(ctx.globalState.get(FOCUS_TIMER_KEY), Date.now());
     panel.title = 'Muxentra';
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'assets', 'muxentra-icon.png');
     this.statusItem = vscode.window.createStatusBarItem('muxentra.attention', vscode.StatusBarAlignment.Left, 90);
@@ -178,6 +184,26 @@ export class MuxentraPanel {
     this.branchTimer = setInterval(() => {
       if (this.panel.visible) this.refreshBranches(false);
     }, 5000);
+    this.focusTick = setInterval(() => this.tickFocusTimer(), 1000);
+  }
+
+  private tickFocusTimer(): void {
+    const now = Date.now();
+    const previous = this.focusTimer;
+    const next = advanceFocusTimer(previous, now);
+    const completedPhase = completedFocusPhase(previous, next, now);
+    if (next !== this.focusTimer) {
+      this.focusTimer = next;
+      void this.ctx.globalState.update(FOCUS_TIMER_KEY, next);
+    }
+    if ((this.panel.visible && this.focusTimer.enabled) || completedPhase) {
+      this.post({
+        type: 'focusTimer',
+        timer: this.focusTimer,
+        now,
+        completedPhase: completedPhase ?? undefined,
+      });
+    }
   }
 
   // ------------------------------------------------------------------ bloqueo del grupo
@@ -400,6 +426,7 @@ export class MuxentraPanel {
           alive,
           exited: this.ptys.takeExited(),
           showUsage: usageEnabled(),
+          focusTimer: this.focusTimer,
         });
         this.sendUsage();
         break;
@@ -451,7 +478,34 @@ export class MuxentraPanel {
       case 'refreshUsage':
         this.sendUsage(true);
         break;
+      case 'setNotifications':
+        await this.setNotifications(m.enabled);
+        break;
+      case 'focusTimer':
+        this.focusTimer = changeFocusTimer(this.focusTimer, m.action, Date.now(), m.workMinutes, m.breakMinutes, m.sound);
+        await this.ctx.globalState.update(FOCUS_TIMER_KEY, this.focusTimer);
+        this.post({ type: 'focusTimer', timer: this.focusTimer, now: Date.now() });
+        break;
     }
+  }
+
+  /** Guarda la preferencia desde el panel y conserva el modo detallado previo. */
+  private async setNotifications(enabled: boolean): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('muxentra');
+    const current = cfg.get<string>('notifyOn') ?? 'all';
+    const target = cfg.inspect<string>('notifyOn')?.workspaceValue === undefined
+      ? vscode.ConfigurationTarget.Global
+      : vscode.ConfigurationTarget.Workspace;
+    if (enabled) {
+      const saved = this.ctx.globalState.get<string>(LAST_NOTIFY_MODE_KEY);
+      const mode = saved === 'attention' || saved === 'all' ? saved : 'all';
+      await cfg.update('notifyOn', mode, target);
+      return;
+    }
+    if (current === 'attention' || current === 'all') {
+      await this.ctx.globalState.update(LAST_NOTIFY_MODE_KEY, current);
+    }
+    await cfg.update('notifyOn', 'none', target);
   }
 
   private async spawn(termId: string, cols: number, rows: number): Promise<void> {
@@ -504,6 +558,8 @@ export class MuxentraPanel {
     this.usageRefreshTimer = undefined;
     if (this.branchTimer) clearInterval(this.branchTimer);
     this.branchTimer = undefined;
+    if (this.focusTick) clearInterval(this.focusTick);
+    this.focusTick = undefined;
     this.ptys.detach();
     this.pending.clear();
     for (const d of this.disposables.splice(0)) d.dispose();
@@ -536,7 +592,40 @@ export class MuxentraPanel {
     <div id="tabbar"></div>
     <div id="content"></div>
     <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
-    <div id="usage" hidden></div>
+    <div id="focus-popover" role="dialog" aria-label="Temporizador de enfoque" hidden>
+      <div class="focus-popover-heading"><strong>Temporizador de enfoque</strong><span>Trabajo y descanso</span></div>
+      <form id="focus-form">
+        <label for="focus-work">Trabajo <span>minutos</span></label>
+        <input id="focus-work" type="number" min="1" max="180" step="1" required>
+        <label for="focus-break">Descanso <span>minutos</span></label>
+        <input id="focus-break" type="number" min="1" max="180" step="1" required>
+        <div class="focus-sound">
+          <label for="focus-sound">Sonido al terminar</label>
+          <div class="focus-sound-controls">
+            <select id="focus-sound">
+              <option value="subtle">Sutil · 0,6 s</option>
+              <option value="warm">Cálida · 1,1 s</option>
+              <option value="long">Prolongada · 1,8 s</option>
+            </select>
+            <button id="focus-preview" type="button">Probar</button>
+          </div>
+        </div>
+        <button id="focus-save" type="submit">Iniciar</button>
+      </form>
+      <p id="focus-hint"></p>
+      <div id="focus-actions" hidden>
+        <button id="focus-toggle" type="button">Pausar</button>
+        <button id="focus-skip" type="button">Saltar fase</button>
+        <button id="focus-stop" type="button">Desactivar</button>
+      </div>
+    </div>
+    <div id="bottom-bar" hidden>
+      <div id="usage" hidden></div>
+      <div id="focus" hidden>
+        <button id="focus-status" type="button" aria-label="Ver temporizador de enfoque" aria-controls="focus-popover" aria-expanded="false"><span id="focus-phase"></span><strong id="focus-time"></strong></button>
+        <button id="focus-pause" type="button" aria-label="Pausar temporizador"></button>
+      </div>
+    </div>
   </div>
   <script nonce="${nonce}" src="${script}"></script>
 </body>
@@ -569,6 +658,7 @@ export function currentSettings(): TermSettings {
     agentStatus: cfg.get<boolean>('agentStatus') ?? true,
     quietSeconds: Math.min(60, Math.max(1, cfg.get<number>('quietSeconds') ?? 3)),
     attentionSound: cfg.get<boolean>('attentionSound') ?? false,
+    notificationsEnabled: (cfg.get<string>('notifyOn') ?? 'all') !== 'none',
   };
 }
 

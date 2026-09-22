@@ -1,4 +1,5 @@
 // Tipos compartidos entre el extension host y el webview.
+import type { FocusAction, FocusPhase, FocusSound, FocusTimerState } from './focusTimer';
 
 export type SplitDir = 'row' | 'col';
 
@@ -67,6 +68,8 @@ export interface TermSettings {
   quietSeconds: number;
   /** Sonido corto cuando una terminal pide atención. */
   attentionSound: boolean;
+  /** Los avisos de VS Code están habilitados para el panel. */
+  notificationsEnabled: boolean;
 }
 
 export type TerminalFontWeight =
@@ -156,6 +159,9 @@ export type WebviewMessage =
   | { type: 'layout'; layout: WorkspaceLayout }
   | { type: 'copy'; text: string }
   | { type: 'refreshUsage' }
+  /** Activa o silencia los avisos de Muxentra desde la barra del panel. */
+  | { type: 'setNotifications'; enabled: boolean }
+  | { type: 'focusTimer'; action: FocusAction; workMinutes?: number; breakMinutes?: number; sound?: FocusSound }
   /** Directorio que reportó el shell (OSC 7, OSC 9;9 o el título). */
   | { type: 'cwd'; termId: string; cwd: string }
   /**
@@ -176,6 +182,7 @@ export type HostMessage =
       /** Terminales cuyo proceso terminó mientras el panel estaba cerrado. */
       exited: string[];
       showUsage: boolean;
+      focusTimer: FocusTimerState;
     }
   | { type: 'data'; termId: string; data: string }
   | { type: 'restore'; termId: string; snapshot: TerminalSnapshot }
@@ -186,6 +193,7 @@ export type HostMessage =
   | { type: 'serverLost' }
   | { type: 'settings'; settings: TermSettings }
   | { type: 'usage'; usage: UsageSnapshot | null; showUsage: boolean }
+  | { type: 'focusTimer'; timer: FocusTimerState; now: number; completedPhase?: FocusPhase }
   /** Rama de la terminal; branch null cuando el directorio no está en un repositorio. */
   | { type: 'branch'; termId: string; branch: string | null; detached: boolean; cwd: string | null }
   | { type: 'command'; command: MuxentraCommand; arg?: string };

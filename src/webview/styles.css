@@ -218,6 +218,27 @@ body {
   color: var(--vscode-tab-inactiveForeground);
 }
 
+.tab-notifications {
+  align-self: center;
+  margin: 0 4px 0 0;
+  flex: 0 0 auto;
+  color: var(--vscode-tab-inactiveForeground);
+}
+
+.tab-notifications[aria-pressed="false"] {
+  color: var(--vscode-descriptionForeground);
+}
+
+.tab-focus {
+  align-self: center;
+  flex: 0 0 auto;
+  color: var(--vscode-tab-inactiveForeground);
+}
+
+.tab-focus.active {
+  color: var(--vscode-charts-blue, #3b8eea);
+}
+
 /* ---------- contenido ---------- */
 
 #content {
@@ -478,13 +499,244 @@ body.pane-dragging * {
   background: var(--vscode-menu-separatorBackground, rgba(128, 128, 128, 0.3));
 }
 
+/* ---------- barra inferior y temporizador de enfoque ---------- */
+
+#bottom-bar {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  flex: 0 0 auto;
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
+}
+
+#bottom-bar[hidden],
+#focus[hidden],
+#focus-popover[hidden],
+#focus-actions[hidden] {
+  display: none !important;
+}
+
+#focus {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  margin: 0 5px 0 auto;
+  color: var(--vscode-charts-blue, #3b8eea);
+}
+
+#focus.break {
+  color: var(--vscode-charts-green, #23d18b);
+}
+
+#focus.paused {
+  color: var(--vscode-descriptionForeground);
+}
+
+#focus button {
+  height: 27px;
+  border: 1px solid color-mix(in srgb, currentColor 34%, var(--vscode-widget-border, transparent));
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 8%, var(--vscode-editor-background));
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+#focus button:hover {
+  background: color-mix(in srgb, currentColor 15%, var(--vscode-editor-background));
+}
+
+#focus button:focus-visible,
+#focus-popover button:focus-visible,
+#focus-popover input:focus-visible,
+#focus-popover select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+#focus-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+#focus-phase {
+  color: var(--vscode-foreground);
+  font-size: 10px;
+}
+
+#focus-time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+#focus-pause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  padding: 0;
+}
+
+#focus-pause svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+#focus-popover {
+  position: absolute;
+  z-index: 35;
+  top: 40px;
+  right: 8px;
+  width: min(290px, calc(100% - 16px));
+  max-height: calc(100% - 55px);
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  border-radius: 9px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
+}
+
+#focus-popover.from-bottom {
+  top: auto;
+  bottom: 40px;
+}
+
+.focus-popover-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
+}
+
+.focus-popover-heading strong {
+  font-size: 12px;
+}
+
+.focus-popover-heading span,
+#focus-hint,
+#focus-form label span {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+#focus-form {
+  display: grid;
+  grid-template-columns: 1fr 80px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#focus-form label {
+  font-size: 12px;
+}
+
+.focus-sound {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.focus-sound-controls {
+  display: flex;
+  gap: 6px;
+}
+
+#focus-form input,
+#focus-form select {
+  width: 100%;
+  height: 27px;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+  border-radius: 4px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  font: inherit;
+}
+
+#focus-form select {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+}
+
+#focus-form button,
+#focus-actions button,
+#focus-preview {
+  min-height: 27px;
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+#focus-save:hover,
+#focus-actions button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+#focus-save {
+  grid-column: 1 / -1;
+}
+
+#focus-hint {
+  margin: 9px 0 0;
+  line-height: 1.35;
+}
+
+#focus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 11px;
+}
+
+#focus-actions button {
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+}
+
+#focus-preview {
+  flex: 0 0 auto;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+}
+
+#focus-actions button:hover,
+#focus-preview:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
 /* ---------- barra de uso ---------- */
 
 #usage {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   min-height: 34px;
   padding: 2px 5px;
   box-sizing: border-box;
@@ -496,7 +748,6 @@ body.pane-dragging * {
   scrollbar-width: none;
   color: var(--vscode-foreground);
   background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
-  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
 }
 
 #usage::-webkit-scrollbar {

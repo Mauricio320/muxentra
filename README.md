@@ -75,7 +75,7 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.7.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.8.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -99,6 +99,7 @@ With several agents running at once you do not have to watch them: each terminal
 - Every tab can be given a colour (right-click the tab) so you can find it at a glance.
 - Every terminal shows what it is up to: a pulsing blue dot while it works, a green "listo" label when it finishes, an orange "atención" one when the program is asking for something. The dot is repeated on the tab, the number of waiting terminals appears in the panel title and in the VS Code status bar, and a notification offers to take you there. Built for having four agents running and knowing which one needs you.
 - A bottom bar with Claude Code and OpenAI Codex usage: the percentage of each limit window and how long until it resets. Click to refresh.
+- A work/break timer: click the clock beside the tab bar, choose the minutes (20/5 by default) and start. The active countdown appears beside usage at the bottom, with pause/resume; click it to change durations, choose and preview one of three chimes (about 0.6, 1.1 or 1.8 seconds), skip a phase or turn it off. The selected sound is saved. Work and break alternate automatically; the chime plays at phase changes while the panel is visible, and the timer keeps time across panel and window reloads.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
 - `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS) pastes images: the clipboard image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent.
 - Opening the panel creates a dedicated group on the right and locks it, so files keep opening in the main editor. The position survives a window restore. Unlock it with the VS Code padlock or with the `muxentra.lockEditorGroup` setting.
@@ -167,6 +168,7 @@ Worth knowing:
 - `muxentra.showUsage`: show or hide the bottom usage bar.
 - `muxentra.agentStatus`: turn the per-terminal status tracking on or off.
 - `muxentra.notifyOn`: when VS Code notifies you. `all` (the default) on finish and on attention, `attention` only when the program asks for something, `none` never.
+- The bell in the panel tab bar toggles these notifications without opening VS Code settings. It remembers whether you had selected `all` or `attention`.
 - `muxentra.attentionSound`: a short beep when a terminal asks for attention. Off by default.
 - `muxentra.quietSeconds`: seconds of silence after which a busy terminal counts as finished. Defaults to 3.
 - `muxentra.showBranch`: show or hide the git branch on each terminal.
@@ -231,6 +233,9 @@ npm install
 npm run build        # builds extension and webview into dist/
 npm run watch        # rebuilds on save
 npm run typecheck    # tsc --noEmit
+npm run test:terminal # scrollback, replay and resize against a real pty
+npm run test:usage   # quota sources, precedence and the statusLine bridge
+npm run test:focus   # work/break timer transitions and persistence
 npm run package      # produces the .vsix
 ```
 

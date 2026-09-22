@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
+import { defaultFocusTimer, validFocusSound, type FocusPhase, type FocusSound, type FocusTimerState } from '../focusTimer';
 import type {
   HostMessage,
   LayoutNode,
@@ -98,6 +99,14 @@ const ICONS = {
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4l3 3 6-6.8"/></svg>',
   refresh:
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.1 5.7A5.4 5.4 0 1 0 13 10.6"/><path d="M10.2 5.7h3.2V2.5"/></svg>',
+  bellOff:
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M4.4 6.3a3.6 3.6 0 0 1 6.2-2.5 3.6 3.6 0 0 1 1 2.5c0 3 1.2 4 1.2 4H6.7M6.9 12.1a1.3 1.3 0 0 0 2.2 0"/></svg>',
+  timer:
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.2v3.6l2.2 1.3M6.2 1.5h3.6"/></svg>',
+  pause:
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3v10M10.5 3v10"/></svg>',
+  play:
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 8 5-8 5z"/></svg>',
 };
 
 /** Paleta de colores para marcar pestañas. */
@@ -133,6 +142,7 @@ let settings: TermSettings = {
   agentStatus: true,
   quietSeconds: 3,
   attentionSound: false,
+  notificationsEnabled: true,
 };
 let theme: ITheme = buildTheme();
 
@@ -140,6 +150,26 @@ const tabbarEl = document.getElementById('tabbar') as HTMLElement;
 const contentEl = document.getElementById('content') as HTMLElement;
 const usageEl = document.getElementById('usage') as HTMLElement;
 const usagePopoverEl = document.getElementById('usage-popover') as HTMLElement;
+const bottomBarEl = document.getElementById('bottom-bar') as HTMLElement;
+const focusEl = document.getElementById('focus') as HTMLElement;
+const focusStatusEl = document.getElementById('focus-status') as HTMLButtonElement;
+const focusPhaseEl = document.getElementById('focus-phase') as HTMLElement;
+const focusTimeEl = document.getElementById('focus-time') as HTMLElement;
+const focusPauseEl = document.getElementById('focus-pause') as HTMLButtonElement;
+const focusPopoverEl = document.getElementById('focus-popover') as HTMLElement;
+const focusFormEl = document.getElementById('focus-form') as HTMLFormElement;
+const focusWorkEl = document.getElementById('focus-work') as HTMLInputElement;
+const focusBreakEl = document.getElementById('focus-break') as HTMLInputElement;
+const focusSoundEl = document.getElementById('focus-sound') as HTMLSelectElement;
+const focusSaveEl = document.getElementById('focus-save') as HTMLButtonElement;
+const focusHintEl = document.getElementById('focus-hint') as HTMLElement;
+const focusPreviewEl = document.getElementById('focus-preview') as HTMLButtonElement;
+const focusActionsEl = document.getElementById('focus-actions') as HTMLElement;
+const focusToggleEl = document.getElementById('focus-toggle') as HTMLButtonElement;
+const focusSkipEl = document.getElementById('focus-skip') as HTMLButtonElement;
+const focusStopEl = document.getElementById('focus-stop') as HTMLButtonElement;
+let focusTimer = defaultFocusTimer();
+let focusPopoverOpen = false;
 
 // ---------------------------------------------------------------- estado
 
@@ -259,6 +289,7 @@ async function applySettings(next: TermSettings): Promise<void> {
     pane.term.options.scrollback = next.scrollback;
     pane.term.options.cursorBlink = next.cursorBlink;
   }
+  renderTabBar();
   fitVisible();
 }
 
@@ -644,23 +675,68 @@ function refreshTabStates(): void {
 
 let audio: AudioContext | undefined;
 
+function prepareAudio(): AudioContext {
+  audio ??= new AudioContext();
+  if (audio.state === 'suspended') void audio.resume().catch(() => undefined);
+  return audio;
+}
+
 /** Pitido corto, sin archivos: la política de contenido del webview no deja cargar audio. */
 function beep(): void {
   try {
-    audio ??= new AudioContext();
-    if (audio.state === 'suspended') void audio.resume();
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
+    const context = prepareAudio();
+    const osc = context.createOscillator();
+    const gain = context.createGain();
     osc.type = 'sine';
     osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.06, audio.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.18);
-    osc.connect(gain).connect(audio.destination);
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.06, context.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+    osc.connect(gain).connect(context.destination);
     osc.start();
-    osc.stop(audio.currentTime + 0.2);
+    osc.stop(context.currentTime + 0.2);
   } catch {
     // Sin audio disponible: el aviso visual ya se mostró.
+  }
+}
+
+const FOCUS_CHIMES: Record<FocusSound, {
+  notes: readonly number[];
+  step: number;
+  ring: number;
+  volume: number;
+  harmonic: number;
+}> = {
+  subtle: { notes: [523.25, 659.25], step: 0.19, ring: 0.43, volume: 0.025, harmonic: 0.004 },
+  warm: { notes: [392, 523.25, 659.25], step: 0.25, ring: 0.58, volume: 0.021, harmonic: 0.0035 },
+  long: { notes: [392, 493.88, 587.33, 783.99], step: 0.34, ring: 0.78, volume: 0.017, harmonic: 0.003 },
+};
+
+/** Melodía ascendente al terminar trabajo, descendente al terminar descanso. */
+function playFocusChime(completed: FocusPhase, sound: FocusSound): void {
+  try {
+    const context = prepareAudio();
+    const start = context.currentTime + 0.01;
+    const chime = FOCUS_CHIMES[sound];
+    const notes = completed === 'work' ? chime.notes : [...chime.notes].reverse();
+    for (const [index, note] of notes.entries()) {
+      const at = start + index * chime.step;
+      for (const [partial, volume] of [[1, chime.volume], [2, chime.harmonic]] as const) {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(note * partial, at);
+        osc.frequency.exponentialRampToValueAtTime(note * partial * 0.995, at + chime.ring);
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(volume, at + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + chime.ring);
+        osc.connect(gain).connect(context.destination);
+        osc.start(at);
+        osc.stop(at + chime.ring + 0.01);
+      }
+    }
+  } catch {
+    // El cambio de fase sigue visible aunque el dispositivo no admita audio.
   }
 }
 
@@ -1103,6 +1179,10 @@ window.addEventListener(
       ev.stopPropagation();
       openUsageId = null;
       renderUsagePopover();
+    } else if (focusPopoverOpen) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setFocusPopover(false);
     }
   },
   true,
@@ -1157,7 +1237,21 @@ function renderTabBar(): void {
   }
   const add = iconButton(ICONS.add, 'Nueva pestaña (Ctrl+Shift+T)', () => newTab());
   add.classList.add('tab-add');
-  tabbarEl.append(add);
+  const focus = iconButton(ICONS.timer, 'Configurar temporizador de enfoque', () => setFocusPopover(!focusPopoverOpen));
+  focus.classList.add('tab-focus');
+  focus.classList.toggle('active', focusTimer.enabled);
+  focus.setAttribute('aria-label', focus.title);
+  focus.setAttribute('aria-controls', 'focus-popover');
+  focus.setAttribute('aria-expanded', String(focusPopoverOpen));
+  const notifications = iconButton(
+    settings.notificationsEnabled ? ICONS.bell : ICONS.bellOff,
+    settings.notificationsEnabled ? 'Desactivar notificaciones' : 'Activar notificaciones',
+    () => post({ type: 'setNotifications', enabled: !settings.notificationsEnabled }),
+  );
+  notifications.classList.add('tab-notifications');
+  notifications.setAttribute('aria-label', notifications.title);
+  notifications.setAttribute('aria-pressed', String(settings.notificationsEnabled));
+  tabbarEl.append(add, focus, notifications);
 }
 
 // ---------------------------------------------------------------- menú de pestaña
@@ -1521,6 +1615,100 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
   return true;
 }
 
+// ---------------------------------------------------------------- temporizador de enfoque
+
+function updateBottomBarVisibility(): void {
+  bottomBarEl.hidden = !showUsage && !focusTimer.enabled;
+}
+
+function setFocusPopover(open: boolean, anchor: 'top' | 'bottom' = 'top'): void {
+  focusPopoverOpen = open;
+  focusPopoverEl.hidden = !open;
+  focusPopoverEl.classList.toggle('from-bottom', open && anchor === 'bottom');
+  tabbarEl.querySelector('.tab-focus')?.setAttribute('aria-expanded', String(open));
+  focusStatusEl.setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  openUsageId = null;
+  renderUsagePopover();
+  focusWorkEl.value = String(focusTimer.workMinutes);
+  focusBreakEl.value = String(focusTimer.breakMinutes);
+  focusSoundEl.value = focusTimer.sound;
+  if (focusTimer.enabled) {
+    try { prepareAudio(); } catch { /* El panel puede funcionar sin audio. */ }
+  }
+  updateFocusActions();
+  focusWorkEl.focus();
+}
+
+function updateFocusActions(): void {
+  focusSaveEl.textContent = focusTimer.enabled ? 'Guardar ajustes' : 'Iniciar';
+  focusActionsEl.hidden = !focusTimer.enabled;
+  focusToggleEl.textContent = focusTimer.running ? 'Pausar' : 'Reanudar';
+  focusHintEl.textContent = !focusTimer.enabled
+    ? 'Los bloques de trabajo y descanso se alternan automáticamente.'
+    : focusTimer.running
+      ? 'Los cambios de duración se aplican al siguiente bloque.'
+      : 'En pausa. Al guardar, el bloque actual toma la nueva duración.';
+}
+
+function renderFocus(next: FocusTimerState, now: number): void {
+  const enabledChanged = focusTimer.enabled !== next.enabled;
+  focusTimer = next;
+  focusEl.hidden = !next.enabled;
+  updateBottomBarVisibility();
+  if (enabledChanged) {
+    renderTabBar();
+    fitVisible();
+  }
+  if (!next.enabled) {
+    if (focusPopoverOpen) updateFocusActions();
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((next.running && next.endsAt !== null ? next.endsAt - now : next.remainingMs) / 1000));
+  const time = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  const phase = next.phase === 'work' ? 'Trabajo' : 'Descanso';
+  focusEl.classList.toggle('break', next.phase === 'break');
+  focusEl.classList.toggle('paused', !next.running);
+  focusPhaseEl.textContent = next.running ? phase : `${phase} en pausa`;
+  focusTimeEl.textContent = time;
+  focusStatusEl.setAttribute('aria-label', `${phase}${next.running ? '' : ' en pausa'}, ${time} restantes. Abrir temporizador`);
+  focusPauseEl.innerHTML = next.running ? ICONS.pause : ICONS.play;
+  focusPauseEl.setAttribute('aria-label', next.running ? 'Pausar temporizador' : 'Reanudar temporizador');
+  focusPauseEl.title = focusPauseEl.getAttribute('aria-label') ?? '';
+  if (focusPopoverOpen) updateFocusActions();
+}
+
+focusFormEl.addEventListener('submit', ev => {
+  ev.preventDefault();
+  if (!focusFormEl.reportValidity()) return;
+  if (!focusTimer.enabled) {
+    try { prepareAudio(); } catch { /* El temporizador puede funcionar sin audio. */ }
+  }
+  const workMinutes = Number(focusWorkEl.value);
+  const breakMinutes = Number(focusBreakEl.value);
+  const sound = validFocusSound(focusSoundEl.value) ? focusSoundEl.value : focusTimer.sound;
+  post({ type: 'focusTimer', action: focusTimer.enabled ? 'configure' : 'start', workMinutes, breakMinutes, sound });
+  setFocusPopover(false);
+});
+focusStatusEl.addEventListener('click', () => setFocusPopover(!focusPopoverOpen, 'bottom'));
+function toggleFocusPlayback(): void {
+  if (!focusTimer.running) {
+    try { prepareAudio(); } catch { /* El temporizador puede funcionar sin audio. */ }
+  }
+  post({ type: 'focusTimer', action: focusTimer.running ? 'pause' : 'resume' });
+}
+focusPauseEl.addEventListener('click', toggleFocusPlayback);
+focusToggleEl.addEventListener('click', toggleFocusPlayback);
+focusSkipEl.addEventListener('click', () => post({ type: 'focusTimer', action: 'skip' }));
+focusPreviewEl.addEventListener('click', () => {
+  const sound = validFocusSound(focusSoundEl.value) ? focusSoundEl.value : focusTimer.sound;
+  playFocusChime('work', sound);
+});
+focusStopEl.addEventListener('click', () => {
+  post({ type: 'focusTimer', action: 'stop' });
+  setFocusPopover(false);
+});
+
 // ---------------------------------------------------------------- barra de uso
 
 let showUsage = true;
@@ -1553,6 +1741,7 @@ function renderUsage(snapshot: UsageSnapshot | null): void {
     renderUsagePopover();
     usageEl.hidden = true;
     usageEl.replaceChildren();
+    updateBottomBarVisibility();
     fitVisible();
     return;
   }
@@ -1564,6 +1753,7 @@ function renderUsage(snapshot: UsageSnapshot | null): void {
     },
   );
   usageEl.hidden = false;
+  updateBottomBarVisibility();
   const focused = document.activeElement as HTMLElement | null;
   const focusedProvider = usageEl.contains(focused) ? focused?.closest<HTMLElement>('.usage-item')?.dataset.provider : undefined;
   const focusedRefresh = focused?.classList.contains('usage-refresh') && usageEl.contains(focused);
@@ -1652,6 +1842,7 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
 
   el.title = usageTooltip(item);
   el.addEventListener('click', () => {
+    if (focusPopoverOpen) setFocusPopover(false);
     openUsageId = openUsageId === item.id ? null : item.id;
     renderUsagePopover();
   });
@@ -1762,8 +1953,11 @@ function usageTooltip(item: UsageItem): string {
 }
 
 document.addEventListener('mousedown', ev => {
+  const target = ev.target as HTMLElement;
+  if (focusPopoverOpen && !focusPopoverEl.contains(target) && !focusEl.contains(target) && !target.closest('.tab-focus')) {
+    setFocusPopover(false);
+  }
   if (!openUsageId) return;
-  const target = ev.target as Node;
   if (usagePopoverEl.contains(target) || usageEl.contains(target)) return;
   openUsageId = null;
   renderUsagePopover();
@@ -1775,6 +1969,7 @@ async function onInit(msg: Extract<HostMessage, { type: 'init' }>): Promise<void
   await applySettings(msg.settings);
   showUsage = msg.showUsage;
   renderUsage(usageSnapshot);
+  renderFocus(msg.focusTimer, Date.now());
   const alive = new Set(msg.alive);
   const exited = new Set(msg.exited);
 
@@ -1868,6 +2063,12 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
     case 'usage':
       showUsage = msg.showUsage;
       renderUsage(msg.usage);
+      break;
+    case 'focusTimer':
+      renderFocus(msg.timer, msg.now);
+      if (msg.completedPhase && Date.now() >= msg.now && Date.now() - msg.now < 3_000) {
+        playFocusChime(msg.completedPhase, msg.timer.sound);
+      }
       break;
     case 'branch':
       setBranch(msg.termId, msg.branch, msg.detached, msg.cwd);
