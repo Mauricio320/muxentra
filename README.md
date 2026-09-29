@@ -8,7 +8,9 @@
   A VS Code extension that puts Git history, nested terminal splits and AI assistant usage in a single workspace.
 </p>
 
-![Two Muxentra tabs inside VS Code: Claude Code on the left and, on the right, Codex and a second Claude Code in splits, with the usage bar for both agents at the bottom](docs/panel.png)
+![Muxentra running Claude Code on the left, Codex at the top right and OpenCode at the bottom right, with real assistant responses and the Claude and Codex usage bar](docs/linkedin/01-claude-codex-opencode.png)
+
+Three assistants running in real terminals inside VS Code. Each pane keeps its own session, name and Git branch; the bottom bar shows Claude and Codex usage and reset countdowns.
 
 ## Requirements
 
@@ -75,7 +77,7 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.13.0 build appears as `mauriciotriana.muxentra@0.13.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.13.1 build appears as `mauriciotriana.muxentra@0.13.1`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -90,6 +92,25 @@ With several agents running at once you do not have to watch them: each terminal
 
 > Heads up: the extension's own interface (command titles, setting descriptions, notifications) is in Spanish.
 
+### Claude Code, Codex and OpenCode side by side
+
+Install and sign in to each CLI separately before starting. Muxentra runs them in your shell; it does not bundle the assistants or their subscriptions.
+
+1. Open your project in VS Code and press `Ctrl+Alt+T` to open Muxentra.
+2. Run `claude` in the first terminal. Press `Shift+F2` and name the pane **Claude Code**.
+3. Press `Ctrl+\` to split to the right. Run `codex` in the new terminal and name it **Codex**.
+4. With the Codex pane focused, press `Ctrl+Shift+\` to split downwards. Run `opencode` in the new pane and name it **OpenCode**.
+5. Press `F2` to name the tab **AI workspace**. Drag the dividers to adjust the layout, or run **Muxentra: Igualar tamaño de terminales** from the command palette.
+6. Give each assistant its own task. The screenshot uses short, read-only prompts about a task board: component structure in Claude Code, test cases in Codex and accessibility in OpenCode.
+
+On macOS, use the corresponding shortcuts in the table below. Each assistant works independently; Muxentra provides the terminal workspace and does not automatically distribute tasks or share conversations between them.
+
+The usage bar currently supports **Claude Code and Codex**. OpenCode runs in its own terminal, without an OpenCode usage card. Click a provider card to inspect the available quota windows and reset times; percentages are a snapshot of the account at capture time.
+
+![Real Claude usage details open below the three assistant terminals](docs/linkedin/02-consumo.png)
+
+[Guía en español: pasos, capturas y texto para LinkedIn](docs/linkedin/README.md).
+
 ### A workspace in focus
 
 The interface uses restrained lavender and blue accents, soft borders and rounded terminal surfaces that follow your VS Code theme. Tabs scroll independently from the always-visible add, Git, focus and notification controls. Git shares the same visual identity, with a repository overview, framed navigation and compact 34px commit rows. Short transitions give feedback when opening controls or changing views; terminal output stays still while you work. Keyboard focus and reduced motion are supported throughout.
@@ -100,7 +121,7 @@ The interface uses restrained lavender and blue accents, soft borders and rounde
 
 The Git tab shows the workspace's repositories, commit graph, branches, local changes and worktrees. The compact history uses colored branch lanes, markers for merges, tags and HEAD, author portraits and relative dates; hover a date for its exact value, or select a commit for its details. Click a changed file to open VS Code's diff editor. Author portraits use public GitHub or Gravatar images when available; unmatched authors show initials. For GitLab repositories, click "Fotos" and confirm the lookup to search for portraits. This sends commit author names and emails to GitLab and remembers your choice for that repository. Private or unmatched profiles keep initials.
 
-![Local design preview of the Git workspace with sample commits](docs/premium-git.png)
+![Muxentra's integrated Git tab showing the real repository, commit history, branches and local changes](docs/linkedin/03-git-integrado.png)
 
 Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, while terminal processes stay alive for reconnection. Opening Git uses a brief fade and shift, which is disabled when reduced motion is requested. The Git tab appears when you open Git with the toolbar button or "Muxentra: Abrir Git"; `muxentra.openGitOnOpen` shows it from the start instead, without taking the focus away from your terminals. After upgrading from an older version with a separate "Muxentra Git" editor tab, reload the VS Code window to restore the unified panel.
 
@@ -273,7 +294,7 @@ and attach the debugger to port 9333. The extension's diagnostics go to the Outp
 
 ```
 npm run package
-gh release create v0.9.9 muxentra-0.9.9.vsix --title v0.9.9 --notes "What changed"
+gh release create v0.13.1 muxentra-0.13.1.vsix --title v0.13.1 --notes "What changed"
 ```
 
 The `install.ps1` at the root always points at the most recent release, so uploading the new `.vsix` and telling people is enough. Bump `version` in `package.json` first: the installer uses `--force` and reinstalls anyway, but without a new number nobody knows which build they have.

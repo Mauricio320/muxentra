@@ -1,0 +1,18 @@
+Tres asistentes de IA. Un mismo espacio de trabajo en VS Code.
+
+Estoy construyendo Muxentra, una extensión que nació de una necesidad de mi día a día: organizar varias terminales y tener a mano el contexto del proyecto mientras trabajo con IA.
+
+En las capturas tengo Claude Code, Codex y OpenCode funcionando en terminales independientes, dentro de una misma pestaña. Para esta demo, uno propone la estructura de un tablero de tareas, otro enumera las pruebas y otro revisa la accesibilidad.
+
+Puedo dividir y reorganizar las terminales, ponerles nombre y ver la rama de Git de cada una. En el mismo panel tengo el historial Git, los cambios locales y el consumo disponible de Claude y Codex, con sus tiempos de reinicio.
+
+También añadí avisos cuando una terminal termina o necesita atención, y un temporizador de trabajo y descanso.
+
+La idea es sencilla: dedicar menos atención a organizar ventanas y tener más a mano lo que necesito para desarrollar.
+
+Muxentra es open source. El código y las instrucciones de instalación están aquí:
+https://github.com/Mauricio320/muxentra
+
+¿Cómo organizas tu espacio cuando trabajas con varios asistentes de IA?
+
+#VSCode #OpenSource #InteligenciaArtificial #DesarrolloDeSoftware #Muxentra
