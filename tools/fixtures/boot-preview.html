@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Muxentra · apertura</title>
+  <!--
+    Reproduce la apertura con el CSS real (styles.css importa boot.css).
+    Abrir con doble clic. Parámetros: ?slow (terminal lenta, 4 s), ?light (tema claro).
+    Con "prefers-reduced-motion" activado en el sistema, se ve la variante instantánea.
+  -->
   <style>
     :root {
       --vscode-editor-background: #1b1b1e;
@@ -21,6 +26,9 @@
       --vscode-descriptionForeground: #62616e;
       --vscode-editorGroupHeader-tabsBackground: #ededf1;
     }
+    .mock-term { flex: 1; padding: 14px 16px; font: 13px/1.5 Consolas, monospace; color: var(--mx-text); }
+    .mock-term b { color: var(--mx-accent); font-weight: 600; }
+    .replay { position: fixed; right: 12px; bottom: 12px; z-index: 60; padding: 6px 12px; border: 1px solid var(--mx-line); border-radius: 8px; background: var(--mx-raised); color: var(--mx-text); font: inherit; font-size: 11px; cursor: pointer; }
   </style>
   <script>if (location.search.includes('light')) document.documentElement.classList.add('light');</script>
   <link rel="stylesheet" href="../../src/webview/styles.css">
@@ -28,36 +36,67 @@
 <body class="vscode-dark">
   <script>if (location.search.includes('light')) document.body.className = 'vscode-light';</script>
   <div id="app" aria-busy="true">
-    <div id="tabbar" inert></div>
-    <div id="content" inert></div>
-    <div id="boot" class="boot">
-    <div class="boot-ambient" aria-hidden="true"><i></i><i></i></div>
-    <span class="boot-corner" aria-hidden="true">MUXENTRA <span>/</span> WORKSPACE</span>
-    <div class="boot-content">
-      <div class="boot-scene" aria-hidden="true">
-        <div class="boot-orbit orbit-outer"><i></i></div>
-        <div class="boot-orbit orbit-inner"><i></i></div>
-        <span class="boot-axis axis-x"></span><span class="boot-axis axis-y"></span>
-        <div class="boot-mark"><svg class="muxentra-mark" viewBox="0 0 256 256" fill="none" aria-hidden="true">
-    <defs><linearGradient id="boot-flow" x1="42" y1="100" x2="214" y2="150" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#79d4d3"/><stop offset=".5" stop-color="#ab9ce8"/><stop offset="1" stop-color="#f7ad8a"/>
-    </linearGradient></defs>
-    <path class="mark-track" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
-    <path class="mark-flow" pathLength="1" stroke="url(#boot-flow)" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
-  </svg></div>
-      </div>
-      <span class="boot-kicker">ENCUENTRA TU FLOW</span>
-      <h1>Muxentra<span>.</span></h1>
-      <p class="boot-tagline">Todo conectado. Tú, en foco.</p>
-      <div class="boot-loading">
-        <div class="boot-progress" aria-hidden="true"><span id="boot-progress-fill"></span></div>
-        <p id="boot-status" role="status" aria-live="polite">Conectando tu espacio de trabajo…</p>
-        <div class="boot-steps" aria-hidden="true"><span id="boot-terminals">Terminales</span><span id="boot-git">Git</span><span id="boot-workspace">Tu espacio</span></div>
-      </div>
-      <button id="boot-skip" class="boot-skip" type="button" hidden>Entrar al espacio <span aria-hidden="true">↗</span></button>
+    <div id="tabbar" inert>
+      <span class="workspace-brand" title="Muxentra"><svg class="muxentra-mark" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+        <defs><linearGradient id="toolbar-flow" x1="42" y1="100" x2="214" y2="150" gradientUnits="userSpaceOnUse"><stop stop-color="#79d4d3"/><stop offset=".5" stop-color="#ab9ce8"/><stop offset="1" stop-color="#f7ad8a"/></linearGradient></defs>
+        <path class="mark-track" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
+        <path class="mark-flow" stroke="url(#toolbar-flow)" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
+      </svg></span>
+      <div class="workspace-tabs"><button class="tab active" type="button">Terminal 1</button></div>
     </div>
-    <span class="boot-signature" aria-hidden="true">UN ESPACIO. TODAS TUS IDEAS.</span>
+    <div id="content" inert><div class="mock-term"><b>~/proyectos/muxentra</b> (main)<br>$ npm run watch<br><br>[watch] build finished, watching for changes...</div></div>
+    <div id="boot" class="boot">
+      <div class="boot-glow" aria-hidden="true"></div>
+      <div class="boot-content">
+        <div class="boot-scene" aria-hidden="true">
+          <span class="boot-ring"></span>
+          <div class="boot-mark" id="boot-mark"><svg class="muxentra-mark" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+            <defs><linearGradient id="boot-flow" x1="42" y1="100" x2="214" y2="150" gradientUnits="userSpaceOnUse"><stop stop-color="#79d4d3"/><stop offset=".5" stop-color="#ab9ce8"/><stop offset="1" stop-color="#f7ad8a"/></linearGradient></defs>
+            <path class="mark-track" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
+            <path class="mark-flow" pathLength="1" stroke="url(#boot-flow)" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
+          </svg></div>
+        </div>
+        <p class="boot-name" aria-hidden="true">Muxentra</p>
+        <div class="boot-loading" id="boot-loading" hidden>
+          <div class="boot-progress" aria-hidden="true"><span id="boot-progress-fill"></span></div>
+          <p id="boot-status" role="status" aria-live="polite"></p>
+          <button id="boot-skip" class="boot-skip" type="button" hidden>Entrar ahora</button>
+        </div>
+      </div>
+    </div>
   </div>
-  </div>
+  <button class="replay" type="button" onclick="location.reload()">Repetir</button>
+  <script>
+    // Misma línea de tiempo que src/webview/main.ts, con una terminal simulada.
+    const slow = location.search.includes('slow');
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const boot = document.getElementById('boot');
+    const mark = document.getElementById('boot-mark');
+    const loading = document.getElementById('boot-loading');
+    const status = document.getElementById('boot-status');
+    const fill = document.getElementById('boot-progress-fill');
+    const skip = document.getElementById('boot-skip');
+    let drawn = false, ready = false, dismissed = false;
+    const update = () => { if (ready && drawn) dismiss(); };
+    setTimeout(() => { drawn = true; update(); }, reduced ? 0 : 680);
+    setTimeout(() => { ready = true; fill.style.transform = 'scaleX(1)'; update(); }, slow ? 4000 : 350);
+    setTimeout(() => { if (!dismissed) { loading.hidden = false; status.textContent = 'Recuperando 1 terminal…'; } }, 1200);
+    setTimeout(() => { if (!dismissed) skip.hidden = false; }, 3000);
+    function dismiss() {
+      if (dismissed) return;
+      dismissed = true;
+      const target = document.querySelector('.workspace-brand .muxentra-mark');
+      if (!reduced && target) {
+        const from = mark.getBoundingClientRect(), to = target.getBoundingClientRect();
+        mark.style.transform = `translate(${to.left + to.width / 2 - (from.left + from.width / 2)}px, ${to.top + to.height / 2 - (from.top + from.height / 2)}px) scale(${to.width / from.width})`;
+      }
+      boot.classList.add(reduced ? 'is-instant' : 'is-leaving');
+      document.getElementById('app').classList.add('workspace-ready');
+      for (const id of ['tabbar', 'content']) document.getElementById(id).removeAttribute('inert');
+      setTimeout(() => { boot.hidden = true; }, reduced ? 0 : 460);
+    }
+    boot.addEventListener('pointerdown', dismiss);
+    window.addEventListener('keydown', ev => { if (!['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(ev.key)) dismiss(); }, true);
+  </script>
 </body>
 </html>

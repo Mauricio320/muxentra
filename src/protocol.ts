@@ -71,6 +71,8 @@ export interface TermSettings {
   attentionSound: boolean;
   /** Los avisos de VS Code están habilitados para el panel. */
   notificationsEnabled: boolean;
+  /** Saludo de apertura al abrir el panel; apagado, el espacio aparece directo. */
+  openingAnimation: boolean;
 }
 
 export type TerminalFontWeight =

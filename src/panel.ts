@@ -607,6 +607,9 @@ export class MuxentraPanel {
     const style = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.css'));
     const gitStyle = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'gitView.css'));
     const nonce = createNonce();
+    // Sin saludo de apertura no hay capa que quitar ni nada que bloquear.
+    const opening = vscode.workspace.getConfiguration('muxentra').get<boolean>('openingAnimation') ?? true;
+    const gate = opening ? ' inert' : '';
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource} 'unsafe-inline'`,
@@ -624,10 +627,10 @@ export class MuxentraPanel {
   <title>Muxentra</title>
 </head>
 <body>
-  <div id="app" aria-busy="true">
-    <div id="tabbar" inert></div>
-    <div id="content" inert></div>
-    <div id="git-view" data-style-uri="${gitStyle}" hidden inert></div>
+  <div id="app"${opening ? ' aria-busy="true"' : ''}>
+    <div id="tabbar"${gate}></div>
+    <div id="content"${gate}></div>
+    <div id="git-view" data-style-uri="${gitStyle}" hidden${gate}></div>
     <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
     <div id="focus-popover" role="dialog" aria-label="Temporizador de enfoque" hidden>
       <div class="focus-popover-heading"><strong>Temporizador de enfoque</strong><span>Trabajo y descanso</span></div>
@@ -656,14 +659,14 @@ export class MuxentraPanel {
         <button id="focus-stop" type="button">Desactivar</button>
       </div>
     </div>
-    <div id="bottom-bar" hidden inert>
+    <div id="bottom-bar" hidden${gate}>
       <div id="usage" hidden></div>
       <div id="focus" hidden>
         <button id="focus-status" type="button" aria-label="Ver temporizador de enfoque" aria-controls="focus-popover" aria-expanded="false"><span id="focus-phase"></span><strong id="focus-time"></strong></button>
         <button id="focus-pause" type="button" aria-label="Pausar temporizador"></button>
       </div>
     </div>
-    ${bootScreen()}
+    ${opening ? bootScreen() : ''}
   </div>
   <script nonce="${nonce}" src="${script}"></script>
 </body>
@@ -697,6 +700,7 @@ export function currentSettings(): TermSettings {
     quietSeconds: Math.min(60, Math.max(1, cfg.get<number>('quietSeconds') ?? 3)),
     attentionSound: cfg.get<boolean>('attentionSound') ?? false,
     notificationsEnabled: (cfg.get<string>('notifyOn') ?? 'all') !== 'none',
+    openingAnimation: cfg.get<boolean>('openingAnimation') ?? true,
   };
 }
 

@@ -75,12 +75,12 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.10.3 build appears as `mauriciotriana.muxentra@0.10.3`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.11.0 build appears as `mauriciotriana.muxentra@0.11.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
 1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right. The icon-only Git tab comes first; a terminal tab is selected when the panel opens. Click the Git branch icon in the first tab, use the Git button beside the timer and bell, or use the next/previous tab shortcuts to open it. The toolbar button is disabled while Git is selected.
-   On startup or restoration, the opening animation draws the fluid M among light orbits, with ambient color and live readiness indicators for terminals and Git. It remains visible for at least four seconds and waits longer if the active tab's terminals or the Git view are still loading, then fades into the workspace. If Git is disabled in settings, it waits only for the terminals and the four-second minimum. After ten seconds, "Entrar al espacio" lets you use the panel while loading continues. Reduced motion disables the drawing, orbit and entrance animations while retaining the minimum display time.
+   On open, a one-second greeting draws the fluid M and then flies it into its slot in the tab bar while the workspace reveals underneath. It lasts exactly as long as the stroke takes and leaves the moment the active tab's terminals answer; Git loads on its own and never holds the workspace back. Any key or click dismisses it at once. Only if a terminal is slow does a progress line appear with what it is waiting for, and after three seconds an "Entrar ahora" button. With reduced motion there is no drawing and no minimum: the mark shows still and the workspace appears as soon as it is ready. `muxentra.openingAnimation` turns the greeting off entirely.
 2. Split it: `Ctrl+\` to the right, `Ctrl+Shift+\` downwards. Drag the dividers to share out the space, or run "Muxentra: Igualar tamaño de terminales" from the command palette.
 3. `Ctrl+Shift+T` opens another tab. `F2` renames it, right-click colours it, and `Shift+F2` renames the focused terminal.
 4. Drag a terminal by its header to rearrange it: drop it in the middle of another one and they swap, drop it near an edge and it moves to that side.
@@ -189,6 +189,7 @@ Worth knowing:
 - `muxentra.quietSeconds`: seconds of silence after which a busy terminal counts as finished. Defaults to 3.
 - `muxentra.showBranch`: show or hide the git branch on each terminal.
 - `muxentra.lockEditorGroup`: lock the editor group when the panel opens.
+- `muxentra.openingAnimation`: the one-second greeting when the panel opens. On by default; off, the workspace appears directly. Applies the next time the panel is opened.
 - `muxentra.openGitOnOpen`: show Git as the first tab inside Muxentra. On by default; the Git toolbar button or "Muxentra: Abrir Git" can show it later when this setting is off.
 - `muxentra.usageRefreshSeconds`: how often usage is re-read while the panel is visible.
 - `muxentra.imagePasteDir`: folder for pasted images. Defaults to `.muxentra-img`. It has to stay inside the workspace.

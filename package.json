@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -331,6 +331,11 @@
           "type": "boolean",
           "default": true,
           "description": "Bloquea el grupo de editores al abrir el panel, para que los archivos no se abran encima de las terminales. Se puede desbloquear con el candado de VS Code."
+        },
+        "muxentra.openingAnimation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Saludo de un segundo al abrir el panel: la M se dibuja y vuela hasta la barra. Se cierra con cualquier tecla o clic. Apagado, el espacio aparece directo. Se aplica al volver a abrir el panel."
         },
         "muxentra.openGitOnOpen": {
           "type": "boolean",

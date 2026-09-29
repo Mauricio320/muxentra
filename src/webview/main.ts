@@ -146,6 +146,7 @@ let settings: TermSettings = {
   quietSeconds: 3,
   attentionSound: false,
   notificationsEnabled: true,
+  openingAnimation: true,
 };
 let theme: ITheme = buildTheme();
 
@@ -155,7 +156,6 @@ const gitEl = document.getElementById('git-view') as HTMLElement;
 let gitView: ReturnType<typeof mountGitView>;
 let gitEnabled = false;
 let gitActive = false;
-let gitLoaded = false;
 const usageEl = document.getElementById('usage') as HTMLElement;
 const usagePopoverEl = document.getElementById('usage-popover') as HTMLElement;
 const bottomBarEl = document.getElementById('bottom-bar') as HTMLElement;
@@ -176,49 +176,60 @@ const focusActionsEl = document.getElementById('focus-actions') as HTMLElement;
 const focusToggleEl = document.getElementById('focus-toggle') as HTMLButtonElement;
 const focusSkipEl = document.getElementById('focus-skip') as HTMLButtonElement;
 const focusStopEl = document.getElementById('focus-stop') as HTMLButtonElement;
-const bootEl = document.getElementById('boot') as HTMLElement;
-const bootStatusEl = document.getElementById('boot-status') as HTMLElement;
-const bootProgressEl = document.getElementById('boot-progress-fill') as HTMLElement;
-const bootSkipEl = document.getElementById('boot-skip') as HTMLButtonElement;
+// ---------------------------------------------------------------- apertura
+//
+// Un saludo, no una puerta. Dura lo que tarda la M en dibujarse y se va en
+// cuanto las terminales de la pestaña activa responden. Cualquier tecla o clic
+// lo cierra. Git carga aparte y nunca retiene el espacio. Si el ajuste
+// muxentra.openingAnimation está apagado, el HTML no trae el marcado y todo
+// esto queda inerte.
+
+const bootEl = document.getElementById('boot');
+const bootStatusEl = document.getElementById('boot-status');
+const bootProgressEl = document.getElementById('boot-progress-fill');
+const bootLoadingEl = document.getElementById('boot-loading');
+const bootSkipEl = document.getElementById('boot-skip');
+const bootMarkEl = document.getElementById('boot-mark');
 let focusTimer = defaultFocusTimer();
 let focusPopoverOpen = false;
 let bootInitialized = false;
-let bootDismissed = false;
-let bootMinimumElapsed = false;
+let bootDismissed = bootEl === null;
+let bootDrawn = false;
 const bootReady = new Set<string>();
-const bootMinimumTimer = window.setTimeout(() => {
-  bootMinimumElapsed = true;
+/** Lo que tarda el trazo de la M (620 ms más su retardo): el saludo no se corta antes. */
+const BOOT_DRAW_MS = 680;
+/** Desde aquí se dice qué se espera; desde los tres segundos, el botón de entrar. */
+const BOOT_LOADING_AFTER_MS = 1_200;
+const BOOT_SKIP_AFTER_MS = 3_000;
+const prefersReducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const bootDrawTimer = window.setTimeout(() => {
+  bootDrawn = true;
   updateBoot();
-}, 4_000);
-const bootWaitTimer = window.setTimeout(() => {
-  if (bootDismissed) return;
-  bootStatusEl.textContent = 'La carga está tardando más de lo habitual.';
+}, prefersReducedMotion() ? 0 : BOOT_DRAW_MS);
+const bootLoadingTimer = window.setTimeout(() => {
+  if (bootDismissed || !bootLoadingEl) return;
+  bootLoadingEl.hidden = false;
+  updateBoot();
+}, BOOT_LOADING_AFTER_MS);
+const bootSkipTimer = window.setTimeout(() => {
+  if (bootDismissed || !bootSkipEl) return;
   bootSkipEl.hidden = false;
-}, 10_000);
+}, BOOT_SKIP_AFTER_MS);
 
 function updateBoot(): void {
   if (!bootInitialized || bootDismissed) return;
   const tab = activeTab();
   const ids = tab ? L.leaves(tab.root).map(leaf => leaf.termId) : [];
-  const total = ids.length + (gitEnabled ? 1 : 0);
-  const ready = ids.filter(id => bootReady.has(id)).length + (gitEnabled && gitLoaded ? 1 : 0);
-  bootProgressEl.style.transform = `scaleX(${total ? ready / total : 1})`;
-  document.getElementById('boot-terminals')?.classList.toggle('is-ready', ids.every(id => bootReady.has(id)));
-  const gitStep = document.getElementById('boot-git');
-  if (gitStep) {
-    gitStep.hidden = !gitEnabled;
-    gitStep.classList.toggle('is-ready', gitLoaded);
+  const ready = ids.filter(id => bootReady.has(id)).length;
+  if (bootProgressEl) bootProgressEl.style.transform = `scaleX(${ids.length ? ready / ids.length : 1})`;
+  if (ready === ids.length) {
+    if (bootDrawn) dismissBoot();
+    return;
   }
-  document.getElementById('boot-workspace')?.classList.toggle('is-ready', ready === total);
-  if (ready === total) {
-    bootStatusEl.textContent = 'Tu espacio está listo.';
-    if (bootMinimumElapsed) dismissBoot();
-  } else if (bootSkipEl.hidden) {
-    bootStatusEl.textContent = gitEnabled && !gitLoaded && ready === ids.length
-      ? 'Cargando el historial Git…'
-      : ready === 0
-        ? `Recuperando ${ids.length} ${ids.length === 1 ? 'terminal' : 'terminales'}…`
-        : `Preparando el espacio · ${ready} de ${total} listo${total === 1 ? '' : 's'}…`;
+  if (bootStatusEl && bootLoadingEl && !bootLoadingEl.hidden) {
+    bootStatusEl.textContent = ready === 0
+      ? `Recuperando ${ids.length} ${ids.length === 1 ? 'terminal' : 'terminales'}…`
+      : `${ready} de ${ids.length} terminales listas…`;
   }
 }
 
@@ -229,38 +240,56 @@ function markBootReady(termId: string): void {
 }
 
 function beginBoot(): void {
+  if (bootDismissed) return;
   bootInitialized = true;
-  bootEl.classList.add('has-target');
   updateBoot();
 }
 
-function dismissBoot(ready = true): void {
-  if (bootDismissed) return;
-  bootDismissed = true;
-  window.clearTimeout(bootMinimumTimer);
-  window.clearTimeout(bootWaitTimer);
-  if (ready) {
-    bootStatusEl.textContent = 'Tu espacio está listo.';
-    bootProgressEl.style.transform = 'scaleX(1)';
-    document.getElementById('boot-workspace')?.classList.add('is-ready');
-  }
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  window.requestAnimationFrame(() => {
-    bootEl.classList.add('is-leaving');
-    document.getElementById('app')?.classList.add('workspace-ready');
-    window.setTimeout(() => {
-      bootEl.hidden = true;
-      document.getElementById('app')?.setAttribute('aria-busy', 'false');
-      tabbarEl.removeAttribute('inert');
-      contentEl.removeAttribute('inert');
-      gitEl.removeAttribute('inert');
-      bottomBarEl.removeAttribute('inert');
-      if (!gitActive) activePane()?.term.focus();
-    }, reducedMotion ? 0 : 480);
-  });
+function onBootKey(ev: KeyboardEvent): void {
+  if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(ev.key)) return;
+  dismissBoot();
 }
 
-bootSkipEl.addEventListener('click', () => dismissBoot(false));
+/**
+ * Cierra el saludo. El anillo se abre como una onda y la marca vuela hasta el
+ * logo de la barra, que es donde vive. El espacio ya estaba dibujado debajo y
+ * queda usable en el mismo instante; la capa solo termina de desvanecerse.
+ */
+function dismissBoot(): void {
+  if (bootDismissed) return;
+  bootDismissed = true;
+  window.clearTimeout(bootDrawTimer);
+  window.clearTimeout(bootLoadingTimer);
+  window.clearTimeout(bootSkipTimer);
+  window.removeEventListener('keydown', onBootKey, true);
+  const app = document.getElementById('app');
+  const instant = prefersReducedMotion();
+  if (bootEl && !instant && bootMarkEl) {
+    // FLIP: medir dónde está el logo de la barra y volar hasta él.
+    const target = tabbarEl.querySelector<HTMLElement>('.workspace-brand .muxentra-mark');
+    const from = bootMarkEl.getBoundingClientRect();
+    const to = target?.getBoundingClientRect();
+    bootMarkEl.style.transform = to && from.width > 0
+      ? `translate(${to.left + to.width / 2 - (from.left + from.width / 2)}px, ${to.top + to.height / 2 - (from.top + from.height / 2)}px) scale(${to.width / from.width})`
+      : 'scale(.3)';
+  }
+  bootEl?.classList.add(instant ? 'is-instant' : 'is-leaving');
+  app?.classList.add('workspace-ready');
+  for (const el of [tabbarEl, contentEl, gitEl, bottomBarEl]) el.removeAttribute('inert');
+  if (!gitActive) activePane()?.term.focus();
+  const finish = (): void => {
+    if (bootEl) bootEl.hidden = true;
+    app?.setAttribute('aria-busy', 'false');
+  };
+  if (instant) finish();
+  else window.setTimeout(finish, 460);
+}
+
+if (bootEl) {
+  bootEl.addEventListener('pointerdown', () => dismissBoot());
+  bootSkipEl?.addEventListener('click', () => dismissBoot());
+  window.addEventListener('keydown', onBootKey, true);
+}
 
 // ---------------------------------------------------------------- estado
 
@@ -2238,10 +2267,11 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
         if (msg.geometry.windowsPty) pane.term.options.windowsPty = msg.geometry.windowsPty;
         pane.started = true;
         scheduleFit(pane);
+        // Con el pty vivo ya se puede escribir; el respiro deja pintar un prompt rápido.
         if (!bootDismissed && !bootReady.has(msg.termId)) {
           window.setTimeout(() => {
             if (panes.get(msg.termId) === pane && !pane.restoring) markBootReady(msg.termId);
-          }, 1_500);
+          }, 300);
         }
       }
       break;
@@ -2291,10 +2321,8 @@ new MutationObserver(applyTheme).observe(document.documentElement, {
 new MutationObserver(applyTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 window.addEventListener('focus', () => { if (bootDismissed && !gitActive) activePane()?.term.focus(); });
 
-gitView = mountGitView(gitEl, gitEl.dataset.styleUri ?? '', message => post({ type: 'git', message }), () => {
-  gitLoaded = true;
-  updateBoot();
-});
+// Git carga por su cuenta: la apertura ya no lo espera.
+gitView = mountGitView(gitEl, gitEl.dataset.styleUri ?? '', message => post({ type: 'git', message }), () => {});
 const syncGitTheme = (): void => { gitEl.classList.toggle('vscode-light', document.body.classList.contains('vscode-light')); };
 syncGitTheme();
 new MutationObserver(syncGitTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });

@@ -9,27 +9,25 @@ export function brandMark(id: 'boot' | 'toolbar' | 'git'): string {
   </svg>`;
 }
 
+/**
+ * Saludo de apertura. Dura lo que tarda la M en dibujarse y se va solo en
+ * cuanto las terminales de la pestaña activa responden; nunca gatea el uso.
+ * El texto de carga y el botón de entrar solo aparecen si algo tarda.
+ */
 export function bootScreen(): string {
   return `<div id="boot" class="boot">
-    <div class="boot-ambient" aria-hidden="true"><i></i><i></i></div>
-    <span class="boot-corner" aria-hidden="true">MUXENTRA <span>/</span> WORKSPACE</span>
+    <div class="boot-glow" aria-hidden="true"></div>
     <div class="boot-content">
       <div class="boot-scene" aria-hidden="true">
-        <div class="boot-orbit orbit-outer"><i></i></div>
-        <div class="boot-orbit orbit-inner"><i></i></div>
-        <span class="boot-axis axis-x"></span><span class="boot-axis axis-y"></span>
-        <div class="boot-mark">${brandMark('boot')}</div>
+        <span class="boot-ring"></span>
+        <div class="boot-mark" id="boot-mark">${brandMark('boot')}</div>
       </div>
-      <span class="boot-kicker">ENCUENTRA TU FLOW</span>
-      <h1>Muxentra<span>.</span></h1>
-      <p class="boot-tagline">Todo conectado. Tú, en foco.</p>
-      <div class="boot-loading">
+      <p class="boot-name" aria-hidden="true">Muxentra</p>
+      <div class="boot-loading" id="boot-loading" hidden>
         <div class="boot-progress" aria-hidden="true"><span id="boot-progress-fill"></span></div>
-        <p id="boot-status" role="status" aria-live="polite">Conectando tu espacio de trabajo…</p>
-        <div class="boot-steps" aria-hidden="true"><span id="boot-terminals">Terminales</span><span id="boot-git">Git</span><span id="boot-workspace">Tu espacio</span></div>
+        <p id="boot-status" role="status" aria-live="polite"></p>
+        <button id="boot-skip" class="boot-skip" type="button" hidden>Entrar ahora</button>
       </div>
-      <button id="boot-skip" class="boot-skip" type="button" hidden>Entrar al espacio <span aria-hidden="true">↗</span></button>
     </div>
-    <span class="boot-signature" aria-hidden="true">UN ESPACIO. TODAS TUS IDEAS.</span>
   </div>`;
 }
