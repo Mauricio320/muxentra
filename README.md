@@ -83,7 +83,7 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.13.1 build appears as `mauriciotriana.muxentra@0.13.1`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.14.0 build appears as `mauriciotriana.muxentra@0.14.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -145,7 +145,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 - A font picker behind the Aa button: Fira Code and JetBrains Mono ship inside the extension (SIL Open Font License, see `assets/fonts/`), so they work even on a machine with nothing installed, and any monospace or Nerd Font you have installed shows up next to them, each previewed in its own glyphs. A Nerd Font makes prompt icons (starship, oh-my-posh, powerlevel10k) render. Ligatures are not drawn: the accelerated WebGL renderer works per cell.
 - A work/break timer: click the clock beside the tab bar, choose the minutes (20/5 by default) and start. The active countdown appears beside usage at the bottom, with pause/resume; click it to change durations, choose and preview one of three chimes (about 0.6, 1.1 or 1.8 seconds), skip a phase or turn it off. The selected sound is saved. Work and break alternate automatically; the chime plays at phase changes while the panel is visible, and the timer keeps time across panel and window reloads.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
-- `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS) pastes images: the clipboard image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent.
+- `Ctrl+V` (`Cmd+V` on macOS) pastes images too: when the clipboard holds an image and no text, the image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent. `Ctrl+Alt+V` (`Cmd+Alt+V`) does the same even when the clipboard also carries text.
 - Opening the panel creates a dedicated group on the right and locks it, so files keep opening in the main editor. The position survives a window restore. Unlock it with the VS Code padlock or with the `muxentra.lockEditorGroup` setting.
 - Tabs and their layout are saved per workspace.
 - Shells run in a separate terminal server, a process independent from VS Code. Closing the panel, reloading the window or quitting VS Code does not kill them: when you come back, each terminal reconnects to its process and shows what it had (Claude, Codex, a dev server, whatever was running). If the server is gone (first use, machine reboot), fresh shells are started.
@@ -168,7 +168,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 | Close terminal | `Ctrl+Shift+W` (and `Ctrl+W` outside the terminal text) | `Cmd+W` |
 | Next / previous terminal | `Ctrl+Alt+→` / `Ctrl+Alt+←` | `Cmd+Alt+→` / `Cmd+Alt+←` |
 | Copy / paste | `Ctrl+Shift+C` / `Ctrl+Shift+V` (also `Ctrl+V`) | `Cmd+C` / `Cmd+V` |
-| Paste image from the clipboard | `Ctrl+Alt+V` | `Cmd+Alt+V` |
+| Paste image from the clipboard | `Ctrl+V`, or `Ctrl+Alt+V` to force the image | `Cmd+V`, or `Cmd+Alt+V` |
 
 "Muxentra: Igualar tamaño de terminales" and "Muxentra: Ir a la terminal que espera" live in the command palette with no default shortcut. Every shortcut can be changed in Keyboard Shortcuts (VS Code adapts them to your keyboard layout).
 
@@ -180,7 +180,7 @@ This is for handing a screenshot to an agent running in the terminal, such as Cl
 
 1. Copy the image. A screen clipping (`Win+Shift+S`), a "Copy image" from the browser, or a `.png` file copied from Explorer all work.
 2. Click the terminal you want it in.
-3. Press `Ctrl+Alt+V`, or `Cmd+Alt+V` on macOS.
+3. Press `Ctrl+V`, or `Cmd+V` on macOS. If the clipboard has text, that text is pasted instead; `Ctrl+Alt+V` (`Cmd+Alt+V`) always goes for the image.
 4. The path is typed into the command line, with a trailing space so you can keep writing:
 
    ```
@@ -232,7 +232,7 @@ Worth knowing:
 - **PowerShell refuses to run the script.** Download the `.vsix` from the release and install it with `code --install-extension`, which does exactly the same thing.
 - **Installed, but nothing shows up.** Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`.
 - **The panel opens but no terminal starts.** Check the Output view, "Muxentra" channel: it says why the shell or the server failed.
-- **`Ctrl+Alt+V` does nothing.** The clipboard holds no image (copy it again), or you are on Linux, where it is not supported. On macOS the shortcut is `Cmd+Alt+V`.
+- **Pasting an image does nothing.** The clipboard holds no image (copy it again), or you are on Linux, where it is not supported. If `Ctrl+V` pastes text instead, the clipboard carries text alongside the image: use `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS).
 - **Fresh shells started when I reopened VS Code.** The server shuts itself down after five minutes with no live terminals and no open panels; if nothing was running, that is expected.
 - **I cannot scroll up while Codex is answering.** Codex renders the answer it is writing inside its own area of the screen and only hands it to the terminal history once the turn is committed. Until then, press Ctrl+T inside Codex to open its transcript and scroll there; afterwards the plain mouse wheel scrolls the terminal history as usual. Do not hold Shift: in a webview that turns the wheel into a horizontal scroll and nothing moves.
 - **A shortcut does not respond.** Another extension may be taking it: look it up in Keyboard Shortcuts by typing "muxentra" and reassign it.

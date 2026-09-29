@@ -84,19 +84,12 @@ export function activate(ctx: vscode.ExtensionContext): void {
     void vscode.window.showInformationMessage('Muxentra: ninguna terminal está esperando.');
   });
 
-  register('muxentra.paste', async () => {
-    const text = await vscode.env.clipboard.readText();
-    if (!text) return;
-    if (!(await confirmPaste(text))) return;
-    MuxentraPanel.send('paste', text);
-  });
-
   // Guarda la imagen del portapapeles en el proyecto y pega su ruta en la terminal.
-  register('muxentra.pasteImage', async () => {
+  const pasteImage = async (quietIfNone: boolean): Promise<void> => {
     try {
       const saved = await saveClipboardImage();
       if (!saved) {
-        void vscode.window.showInformationMessage('Muxentra: no hay ninguna imagen en el portapapeles.');
+        if (!quietIfNone) void vscode.window.showInformationMessage('Muxentra: no hay ninguna imagen en el portapapeles.');
         return;
       }
       log().info(`imagen pegada en ${saved.relative}`);
@@ -106,7 +99,21 @@ export function activate(ctx: vscode.ExtensionContext): void {
     } catch (err) {
       void vscode.window.showErrorMessage(`Muxentra: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  // Ctrl+V pega texto si lo hay; si el portapapeles solo trae una imagen (una
+  // captura, "Copiar imagen" del navegador), la guarda y pega su ruta.
+  register('muxentra.paste', async () => {
+    const text = await vscode.env.clipboard.readText();
+    if (!text) {
+      await pasteImage(true);
+      return;
+    }
+    if (!(await confirmPaste(text))) return;
+    MuxentraPanel.send('paste', text);
   });
+
+  register('muxentra.pasteImage', () => pasteImage(false));
 
   register('muxentra.killAll', async () => {
     const answer = await vscode.window.showWarningMessage(
