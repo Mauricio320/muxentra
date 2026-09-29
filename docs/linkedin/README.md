@@ -12,6 +12,10 @@ Sube las imágenes en este orden:
 
 Los PNG se entregan a 1680 × 1050 píxeles. Las respuestas son ejemplos breves solicitados sin usar herramientas ni modificar archivos. Los porcentajes de consumo corresponden al momento de la captura y no representan un consumo fijo del producto. OpenCode no tiene tarjeta de consumo en esta versión.
 
+## Videos
+
+Dos versiones del mismo recorrido de 40 segundos, montadas a partir de estas tres capturas: [español](muxentra-demo.mp4) e [inglés](muxentra-demo-en.mp4). Son MP4 H.264 a 1920 × 1080 y 30 fps, sin audio. Los textos del video están traducidos, pero la interfaz que aparece en las capturas sigue en español. El README principal muestra la versión en inglés como [animación WebP](muxentra-demo-en.webp) enlazada al MP4.
+
 ## Cómo reproducir la distribución
 
 ### Preparar el entorno

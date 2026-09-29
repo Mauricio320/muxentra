@@ -12,6 +12,12 @@
 
 Three assistants running in real terminals inside VS Code. Each pane keeps its own session, name and Git branch; the bottom bar shows Claude and Codex usage and reset countdowns.
 
+## Demo
+
+[![A 40-second tour of Muxentra: the three assistant terminals, the Claude usage card and the Git panel](docs/linkedin/muxentra-demo-en.webp)](docs/linkedin/muxentra-demo-en.mp4)
+
+A 40-second tour: the three terminals one by one, the usage card that opens from the bottom bar, and the Git panel. The animation above is a lighter preview; the [full-quality MP4](docs/linkedin/muxentra-demo-en.mp4) is 1080p.
+
 ## Requirements
 
 - VS Code 1.100 or newer. It also runs in Cursor and Windsurf, which are built on the same base.
