@@ -8,7 +8,7 @@
 // el nombre del pipe.
 
 import * as crypto from 'crypto';
-import type { TerminalGeometry, TerminalSnapshot } from './protocol';
+import type { ResumeAgent, TerminalGeometry, TerminalSnapshot } from './protocol';
 
 export const PROTOCOL_VERSION = 2;
 
@@ -45,7 +45,13 @@ export type ClientMessage =
 export type ServerMessage =
   | { t: 'challenge'; version: number; nonce: string; proof: string }
   | { t: 'welcome'; ok: boolean; alive: string[]; exited: string[]; error?: string; stateReplay?: boolean }
-  | { t: 'spawned'; id: string; pid: number; geometry?: TerminalGeometry }
+  /**
+   * `snapshot` y `resume` solo vienen cuando la terminal revive de un snapshot
+   * guardado en disco (el servidor anterior murió, p. ej. al apagar el PC): el
+   * historial va delante de la salida del shell nuevo, y `resume` dice qué
+   * agente estaba corriendo para dejarle escrito su comando de continuar.
+   */
+  | { t: 'spawned'; id: string; pid: number; geometry?: TerminalGeometry; snapshot?: TerminalSnapshot; resume?: ResumeAgent }
   | { t: 'spawnError'; id: string; message: string }
   | { t: 'attached'; id: string; found: boolean; data?: string; snapshot?: TerminalSnapshot }
   | { t: 'data'; id: string; data: string }

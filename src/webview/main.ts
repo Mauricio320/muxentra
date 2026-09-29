@@ -79,7 +79,9 @@ interface Pane {
   restoring: boolean;
   restorePending: string[];
   restoreGeneration: number;
-
+  /** Comando que se deja escrito en el prompt nuevo para retomar al agente; Enter lo lanza. */
+  prefill?: string;
+  prefillTimer?: number;
 }
 
 const ICONS = {
@@ -511,6 +513,8 @@ function ensurePane(termId: string): Pane {
   el.addEventListener('mousedown', () => focusPane(termId), true);
   term.onData(data => {
     if (pane.restoring || !pane.started) return;
+    // Si el usuario teclea antes, manda él: el comando de retomar no se escribe.
+    cancelPrefill(pane);
     noteInput(pane);
     post({ type: 'input', termId, data });
   });
@@ -1009,12 +1013,40 @@ function restoreTerminal(pane: Pane, snapshot: TerminalSnapshot): void {
       pane.restoring = false;
       pane.started = true;
       pane.term.options.disableStdin = false;
-      for (const data of pane.restorePending.splice(0)) writeKeepingView(pane, data);
+      const pending = pane.restorePending.splice(0);
+      for (const data of pending) writeKeepingView(pane, data);
+      if (pending.length) schedulePrefill(pane);
       scheduleFit(pane);
       persist();
       markBootReady(pane.termId);
     });
   });
+}
+
+/** Silencio del shell tras arrancar que se toma por "ya está el prompt". */
+const PREFILL_QUIET_MS = 1200;
+
+/**
+ * Tras revivir una terminal donde corría un agente, se deja escrito su
+ * comando de continuar en cuanto el shell se calla. No se pulsa Enter: lanzar
+ * un agente gasta cuota y eso lo decide el usuario, con Enter o con Ctrl+C.
+ */
+function schedulePrefill(pane: Pane): void {
+  if (!pane.prefill) return;
+  if (pane.prefillTimer !== undefined) window.clearTimeout(pane.prefillTimer);
+  pane.prefillTimer = window.setTimeout(() => {
+    pane.prefillTimer = undefined;
+    const command = pane.prefill;
+    if (!command || pane.restoring || panes.get(pane.termId) !== pane) return;
+    pane.prefill = undefined;
+    post({ type: 'input', termId: pane.termId, data: command });
+  }, PREFILL_QUIET_MS);
+}
+
+function cancelPrefill(pane: Pane): void {
+  pane.prefill = undefined;
+  if (pane.prefillTimer !== undefined) window.clearTimeout(pane.prefillTimer);
+  pane.prefillTimer = undefined;
 }
 
 function fitVisible(): void {
@@ -1053,6 +1085,7 @@ function startPane(termId: string, attach: boolean): void {
 }
 
 function disposePane(pane: Pane): void {
+  cancelPrefill(pane);
   if (pane.quietTimer !== undefined) window.clearTimeout(pane.quietTimer);
   if (pane.fitTimer !== undefined) window.clearTimeout(pane.fitTimer);
   pane.observer.disconnect();
@@ -2250,15 +2283,22 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       const pane = panes.get(msg.termId);
       if (pane) {
         noteOutput(pane, msg.data);
-        if (pane.restoring) pane.restorePending.push(msg.data);
-        else writeKeepingView(pane, msg.data,
-          !bootDismissed && !bootReady.has(msg.termId) ? () => markBootReady(msg.termId) : undefined);
+        if (pane.restoring) {
+          pane.restorePending.push(msg.data);
+        } else {
+          writeKeepingView(pane, msg.data,
+            !bootDismissed && !bootReady.has(msg.termId) ? () => markBootReady(msg.termId) : undefined);
+          schedulePrefill(pane);
+        }
       }
       break;
     }
     case 'restore': {
       const pane = panes.get(msg.termId);
-      if (pane) restoreTerminal(pane, msg.snapshot);
+      if (pane) {
+        pane.prefill = msg.resume === 'claude' ? 'claude --continue' : msg.resume === 'codex' ? 'codex resume --last' : undefined;
+        restoreTerminal(pane, msg.snapshot);
+      }
       break;
     }
     case 'geometry': {

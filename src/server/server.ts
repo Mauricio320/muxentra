@@ -8,7 +8,9 @@
 import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
+import * as path from 'path';
 import type { IPty } from 'node-pty';
+import type { ResumeAgent } from '../protocol';
 import { TerminalState } from './terminalState';
 import {
   HANDSHAKE_TIMEOUT_MS,
@@ -29,6 +31,11 @@ const logFile = process.argv[4];
 
 const IDLE_EXIT_MS = 5 * 60 * 1000;
 const MAX_LOG_BYTES = 512 * 1024;
+/** Cada cuánto se vuelca a disco el historial de las terminales con salida nueva. */
+const SAVE_INTERVAL_MS = 2 * 60 * 1000;
+/** Un historial que nadie reclama en dos semanas ya no vuelve: se borra al arrancar. */
+const SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const SESSION_VERSION = 1;
 
 interface Term {
   proc: IPty;
@@ -38,12 +45,164 @@ interface Term {
   /** Último tamaño aplicado al pty, para no repetir un resize que no cambia nada. */
   cols: number;
   rows: number;
+  /** Hubo salida desde el último volcado a disco. */
+  dirty: boolean;
+  /** Línea que el usuario está tecleando, para saber qué programa lanzó. */
+  line: string;
+  escape: 0 | 1 | 2;
+  /** Agente que se lanzó desde el prompt y aún no ha devuelto el título al shell. */
+  running?: ResumeAgent;
+}
+
+/**
+ * Historial guardado en disco. El proceso no sobrevive a un apagado del PC,
+ * pero lo que había en pantalla sí puede volver encima de un shell nuevo.
+ */
+interface SavedSession {
+  version: number;
+  savedAt: number;
+  cols: number;
+  rows: number;
+  data: string;
+  resume?: ResumeAgent;
 }
 
 const terms = new Map<string, Term>();
 const exitedWithoutOwner = new Set<string>();
 const conns = new Set<Conn>();
 let lastActivity = Date.now();
+const sessionsDir = path.join(path.dirname(tokenFile ?? '.'), 'sessions');
+
+/** Solo ids como los que genera el webview: nada que pueda salirse del directorio. */
+function sessionFile(id: string): string | undefined {
+  return /^[a-z0-9]{6,32}$/i.test(id) ? path.join(sessionsDir, `${id}.json`) : undefined;
+}
+
+function deleteSession(id: string): void {
+  const file = sessionFile(id);
+  if (!file) return;
+  try {
+    fs.unlinkSync(file);
+  } catch {
+    // No había nada guardado.
+  }
+}
+
+/** Escritura atómica: un apagado a mitad de volcado no deja un archivo corrupto. */
+function saveSession(id: string, term: Term): void {
+  const file = sessionFile(id);
+  if (!file || !term.dirty) return;
+  const snapshot = term.state.historySnapshot();
+  const session: SavedSession = {
+    version: SESSION_VERSION, savedAt: Date.now(), cols: snapshot.cols, rows: snapshot.rows,
+    data: snapshot.data, resume: term.running,
+  };
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(temporary, JSON.stringify(session), { mode: 0o600 });
+    fs.renameSync(temporary, file);
+    term.dirty = false;
+  } catch (err) {
+    log(`no se pudo guardar el historial de ${id}: ${String(err)}`);
+    try { fs.unlinkSync(temporary); } catch { /* ya renombrado o nunca escrito */ }
+  }
+}
+
+function saveAll(): void {
+  for (const [id, term] of terms) {
+    if (term.dirty) void term.state.run(() => saveSession(id, term));
+  }
+}
+
+/** Lee y consume el historial guardado de una terminal, si lo hay y es válido. */
+function loadSession(id: string): SavedSession | undefined {
+  const file = sessionFile(id);
+  if (!file) return undefined;
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return undefined;
+  }
+  deleteSession(id);
+  try {
+    const session = JSON.parse(raw) as Partial<SavedSession>;
+    if (session.version !== SESSION_VERSION || typeof session.data !== 'string' || !session.data) return undefined;
+    if (typeof session.savedAt !== 'number' || !Number.isFinite(session.savedAt)) return undefined;
+    return {
+      version: SESSION_VERSION, savedAt: session.savedAt, data: session.data,
+      cols: size(session.cols, 80, 2), rows: size(session.rows, 24, 1),
+      resume: session.resume === 'claude' || session.resume === 'codex' ? session.resume : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function cleanSessions(): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(sessionsDir);
+  } catch {
+    return;
+  }
+  const limit = Date.now() - SESSION_MAX_AGE_MS;
+  for (const name of names) {
+    const file = path.join(sessionsDir, name);
+    try {
+      if (name.endsWith('.tmp') || fs.statSync(file).mtimeMs < limit) fs.unlinkSync(file);
+    } catch {
+      // Se intentará en el próximo arranque.
+    }
+  }
+}
+
+/** Línea separadora que va entre el historial recuperado y el prompt del shell nuevo. */
+function sessionDivider(savedAt: number): string {
+  const when = new Date(savedAt).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `\r\n\x1b[0;2m── sesión anterior · ${when} ──\x1b[0m\r\n`;
+}
+
+/**
+ * Qué agente corre en la terminal. El comando tecleado lo abre; el título lo
+ * confirma (Claude Code pone el suyo) o lo cierra, porque el shell vuelve a
+ * poner el suyo, con la ruta, en cuanto recupera el prompt.
+ */
+function noteTitle(term: Term, title: string): void {
+  const lower = title.toLowerCase();
+  if (lower.includes('claude') || title.trimStart().startsWith('✳')) term.running = 'claude';
+  else if (lower.includes('codex')) term.running = 'codex';
+  else if (/mingw|msys|cygwin|powershell|cmd\.exe|:[\\/]|^[a-z]:\\|^\/|~/i.test(title)) term.running = undefined;
+}
+
+function noteInput(term: Term, data: string): void {
+  for (const char of data) {
+    const code = char.charCodeAt(0);
+    if (term.escape === 1) {
+      term.escape = char === '[' || char === 'O' ? 2 : 0;
+      continue;
+    }
+    if (term.escape === 2) {
+      if (code >= 0x40 && code <= 0x7e) term.escape = 0;
+      continue;
+    }
+    if (char === '\x1b') {
+      term.escape = 1;
+    } else if (char === '\r' || char === '\n') {
+      const command = term.line.trim();
+      term.line = '';
+      const match = /^(claude|codex)(\s|$)/.exec(command);
+      if (match) term.running = match[1] as ResumeAgent;
+    } else if (char === '\x7f' || char === '\b') {
+      term.line = term.line.slice(0, -1);
+    } else if (char === '\x03' || char === '\x15') {
+      term.line = '';
+    } else if (code >= 0x20 && term.line.length < 512) {
+      term.line += char;
+    }
+  }
+}
 
 let logBytes = -1;
 
@@ -200,6 +359,9 @@ class Conn {
       if (term.owner === this) term.owner = null;
     }
     log(`conexión cerrada (${conns.size} activas, ${terms.size} terminales)`);
+    // VS Code se ha ido: es el momento de dejar el historial a salvo, porque
+    // lo siguiente puede ser un apagado del PC que no avisa.
+    saveAll();
   }
 }
 
@@ -233,7 +395,11 @@ function handleAuthed(conn: Conn, msg: ClientMessage): void {
     }
     case 'input':
       if (typeof msg.id === 'string' && typeof msg.data === 'string') {
-        terms.get(msg.id)?.proc.write(msg.data);
+        const term = terms.get(msg.id);
+        if (term) {
+          noteInput(term, msg.data);
+          term.proc.write(msg.data);
+        }
       }
       break;
     case 'resize': {
@@ -280,9 +446,14 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     log('spawn con datos inválidos');
     return;
   }
+  // Leer el historial antes de kill(), porque kill() borra el archivo de sesión.
+  // Si esta terminal dejó historial en disco, el shell nuevo nace con el tamaño
+  // de entonces para que las líneas guardadas no se partan al volver; el cliente
+  // lo ajusta después, como en cualquier reconexión.
+  const saved = loadSession(msg.id);
   kill(msg.id);
-  const cols = size(msg.cols, 80, 2);
-  const rows = size(msg.rows, 24, 1);
+  const cols = saved ? saved.cols : size(msg.cols, 80, 2);
+  const rows = saved ? saved.rows : size(msg.rows, 24, 1);
   let proc: IPty;
   const useConptyDll = process.platform === 'win32' && msg.useConptyDll !== false;
   try {
@@ -309,11 +480,21 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
       windowsPty: { backend: 'conpty' as const, buildNumber: useConptyDll ? 22621 : Number(os.release().split('.')[2]) },
     } : {}),
   }, msg.scrollback);
-  const term: Term = { proc, state, owner: conn, cols, rows };
+  const term: Term = { proc, state, owner: conn, cols, rows, dirty: false, line: '', escape: 0 };
   terms.set(msg.id, term);
   exitedWithoutOwner.delete(msg.id);
-  log(`spawn ${msg.id}: pid ${proc.pid} ${msg.file} ${msg.args.join(' ')}`);
-  conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, geometry: state.geometry });
+  log(`spawn ${msg.id}: pid ${proc.pid} ${msg.file} ${msg.args.join(' ')}${saved ? ' (revive historial)' : ''}`);
+  if (saved) {
+    // El historial entra en la cola antes que cualquier byte del shell nuevo,
+    // así que el snapshot que recibe el cliente lo contiene entero y nada más.
+    void state.run(async () => {
+      await state.write(saved.data + sessionDivider(saved.savedAt));
+      term.dirty = true;
+      conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, geometry: state.geometry, snapshot: state.snapshot(), resume: saved.resume });
+    }).catch(err => log(`revive ${msg.id}: ${String(err)}`));
+  } else {
+    conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, geometry: state.geometry });
+  }
 
   proc.onData(data => {
     if (term.pendingData) {
@@ -325,7 +506,10 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     void state.run(async () => {
       if (term.pendingData === batch) term.pendingData = undefined;
       const output = batch.chunks.join('');
+      const title = state.title;
       await state.write(output);
+      if (state.title !== title) noteTitle(term, state.title);
+      term.dirty = true;
       term.owner?.send({ t: 'data', id: msg.id, data: output });
     }).catch(err => log(`salida ${msg.id}: ${String(err)}`));
   });
@@ -334,6 +518,8 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     log(`exit ${msg.id}: pid ${proc.pid} código ${exitCode}`);
     if (terms.get(msg.id) !== term) return;
     terms.delete(msg.id);
+    // El shell terminó por sí mismo: no hay sesión que recuperar.
+    deleteSession(msg.id);
     lastActivity = Date.now();
     void state.run(() => {
       if (term.owner) term.owner.send({ t: 'exit', id: msg.id, code: exitCode });
@@ -366,6 +552,8 @@ function resize(term: Term, rawCols: unknown, rawRows: unknown): void {
 }
 
 function kill(id: string): void {
+  // Cerrar una terminal a propósito también tira su historial guardado.
+  deleteSession(id);
   const term = terms.get(id);
   if (!term) return;
   terms.delete(id);
@@ -414,6 +602,7 @@ if (!token) {
 }
 
 process.title = 'muxentra-server';
+cleanSessions();
 
 const server = net.createServer(sock => {
   const conn = new Conn(sock);
@@ -453,6 +642,10 @@ setInterval(() => {
     shutdown(0);
   }
 }, 30 * 1000).unref();
+
+// Un apagado del PC no avisa: lo que haya cambiado desde el último volcado se
+// pierde, así que se vuelca periódicamente además de al irse el cliente.
+setInterval(saveAll, SAVE_INTERVAL_MS).unref();
 
 process.on('uncaughtException', err => {
   log(`uncaughtException: ${err.stack ?? err.message}`);

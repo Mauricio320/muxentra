@@ -17,12 +17,14 @@ import {
   type ServerMessage,
 } from './serverProtocol';
 import { resolveShell } from './shell';
-import type { TerminalGeometry, TerminalSnapshot } from './protocol';
+import type { ResumeAgent, TerminalGeometry, TerminalSnapshot } from './protocol';
 
 export interface PtyListeners {
   onData?: (id: string, data: string) => void;
   onExit?: (id: string, code: number) => void;
   onAttached?: (id: string, found: boolean, data: string | undefined, snapshot?: TerminalSnapshot) => void;
+  /** La terminal revivió con el historial guardado en disco por un servidor anterior. */
+  onRevived?: (id: string, snapshot: TerminalSnapshot, resume?: ResumeAgent) => void;
   onGeometry?: (id: string, geometry: TerminalGeometry) => void;
   onSpawnError?: (id: string, message: string) => void;
   /** Se perdió la conexión con el servidor: todas las terminales se dan por muertas. */
@@ -350,7 +352,8 @@ export class PtyClient {
         break;
       case 'spawned':
         this.alive.add(msg.id);
-        log().info(`spawned ${msg.id}: pid ${msg.pid}`);
+        log().info(`spawned ${msg.id}: pid ${msg.pid}${msg.snapshot ? ` con historial recuperado${msg.resume ? ` (${msg.resume})` : ''}` : ''}`);
+        if (msg.snapshot) this.listeners.onRevived?.(msg.id, msg.snapshot, msg.resume);
         if (msg.geometry) this.listeners.onGeometry?.(msg.id, msg.geometry);
         break;
       case 'spawnError':

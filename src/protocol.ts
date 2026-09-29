@@ -50,6 +50,9 @@ export interface TerminalSnapshot extends TerminalGeometry {
   data: string;
 }
 
+/** Agente que corría en una terminal cuando se guardó su historial en disco. */
+export type ResumeAgent = 'claude' | 'codex';
+
 export interface TermSettings {
   fontFamily: string;
   fontSize: number;
@@ -192,7 +195,8 @@ export type HostMessage =
       focusTimer: FocusTimerState;
     }
   | { type: 'data'; termId: string; data: string }
-  | { type: 'restore'; termId: string; snapshot: TerminalSnapshot }
+  /** `resume` llega cuando el historial viene del disco y un agente estaba corriendo. */
+  | { type: 'restore'; termId: string; snapshot: TerminalSnapshot; resume?: ResumeAgent }
   | { type: 'geometry'; termId: string; geometry: TerminalGeometry }
   | { type: 'exit'; termId: string; code: number }
   | { type: 'spawnError'; termId: string; message: string }

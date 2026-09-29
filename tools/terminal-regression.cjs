@@ -192,7 +192,128 @@ async function serverChecks() {
   }
 }
 
+/** Cliente mínimo contra un servidor ya lanzado: saludo incluido. */
+async function openClient(pipe, token) {
+  let socket;
+  for (let i = 0; i < 60 && !socket; i++) {
+    socket = await new Promise(resolve => {
+      const s = net.createConnection(pipe);
+      s.once('connect', () => resolve(s));
+      s.once('error', () => { s.destroy(); resolve(undefined); });
+    });
+    if (!socket) await delay(50);
+  }
+  assert.ok(socket, 'server reachable');
+  const messages = [];
+  let buffer = '';
+  socket.setEncoding('utf8');
+  socket.on('data', chunk => {
+    buffer += chunk;
+    let index;
+    while ((index = buffer.indexOf('\n')) !== -1) {
+      messages.push(JSON.parse(buffer.slice(0, index)));
+      buffer = buffer.slice(index + 1);
+    }
+  });
+  const send = msg => socket.write(JSON.stringify(msg) + '\n');
+  const waitUntil = async predicate => {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const found = messages.find(predicate);
+      if (found) return found;
+      await delay(20);
+    }
+    throw new Error(`Server message timeout: ${JSON.stringify(messages.filter(m => m.t !== 'data'))}`);
+  };
+  const nonce = crypto.randomBytes(16).toString('hex');
+  send({ t: 'hello', version: PROTOCOL_VERSION, nonce, stateReplay: true });
+  const challenge = await waitUntil(m => m.t === 'challenge');
+  assert.equal(challenge.proof, proofFor(token, 'server', nonce, challenge.nonce));
+  send({ t: 'auth', proof: proofFor(token, 'client', nonce, challenge.nonce) });
+  assert.equal((await waitUntil(m => m.t === 'welcome')).ok, true);
+  return { socket, send, waitUntil, messages };
+}
+
+const waitForFile = async (file, present) => {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(file) === present) return;
+    await delay(50);
+  }
+  throw new Error(`${file} should ${present ? 'exist' : 'be gone'}`);
+};
+
+/** El servidor muere de golpe (apagado del PC) y otro nuevo devuelve el historial. */
+async function reviveChecks() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muxentra-regression-'));
+  const tokenFile = path.join(dir, 'token');
+  const token = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(tokenFile, token);
+  const pipe = process.platform === 'win32' ? `\\\\.\\pipe\\muxentra-test-${crypto.randomUUID()}` : path.join(dir, 'sock');
+  const logFile = path.join(dir, 'server.log');
+  const start = () => spawn(process.execPath, ['dist/server.js', pipe, tokenFile, logFile], { windowsHide: true, stdio: 'ignore' });
+  const fixture = { file: process.execPath, args: [path.resolve('tools/fixtures/static-output.cjs')], cwd: process.cwd(),
+    env: { ...process.env, TERM: 'xterm-256color' }, cols: 120, rows: 40, scrollback: 20000, useConptyDll: true };
+  const sessions = path.join(dir, 'sessions');
+  let child = start();
+  let client;
+  try {
+    client = await openClient(pipe, token);
+    client.send({ t: 'spawn', id: 'revive', ...fixture });
+    client.send({ t: 'spawn', id: 'dropme', ...fixture });
+    await client.waitUntil(m => m.t === 'data' && m.id === 'revive' && m.data.includes('PTY-ROW-999'));
+    await client.waitUntil(m => m.t === 'data' && m.id === 'dropme' && m.data.includes('PTY-ROW-999'));
+    client.send({ t: 'input', id: 'revive', data: 'claude --model sonnet\r' });
+    await delay(100);
+    client.socket.end();
+    await waitForFile(path.join(sessions, 'revive.json'), true);
+    await waitForFile(path.join(sessions, 'dropme.json'), true);
+    const saved = JSON.parse(fs.readFileSync(path.join(sessions, 'revive.json'), 'utf8'));
+    assert.equal(saved.resume, 'claude');
+    assert.ok(!saved.data.includes('\x1b[?1049h'));
+    console.log('PASS: history and running agent reach disk when the client disconnects');
+
+    client = await openClient(pipe, token);
+    client.send({ t: 'kill', id: 'dropme' });
+    await waitForFile(path.join(sessions, 'dropme.json'), false);
+    client.socket.end();
+    console.log('PASS: closing a terminal on purpose drops its saved history');
+
+    const died = new Promise(resolve => child.once('exit', resolve));
+    child.kill('SIGKILL');
+    await died;
+    child = start();
+    client = await openClient(pipe, token);
+    client.send({ t: 'spawn', id: 'revive', ...fixture, cols: 80, rows: 24 });
+    const spawned = await client.waitUntil(m => m.t === 'spawned' && m.id === 'revive');
+    assert.ok(spawned.snapshot, 'revived spawn carries the saved history');
+    assert.equal(spawned.resume, 'claude');
+    assert.equal(spawned.snapshot.cols, 120);
+    assert.equal(spawned.snapshot.rows, 40);
+    assert.ok(spawned.snapshot.data.includes('sesión anterior'));
+    assert.ok(!fs.existsSync(path.join(sessions, 'revive.json')));
+    const replay = await restore(spawned.snapshot);
+    assert.equal(lines(replay).filter(line => line.startsWith('PTY-ROW-')).length, 1000);
+    await client.waitUntil(m => m.t === 'data' && m.id === 'revive' && m.data.includes('PTY-ROW-999'));
+    for (const m of client.messages) if (m.t === 'data' && m.id === 'revive') await write(replay, m.data);
+    assert.equal(lines(replay).filter(line => line.startsWith('PTY-ROW-')).length, 2000);
+    replay.dispose();
+    console.log('PASS: a fresh server replays the saved history ahead of the new shell and names the agent to resume');
+  } finally {
+    if (client && !client.socket.destroyed) {
+      client.send({ t: 'input', id: 'revive', data: '\x03' });
+      await delay(400);
+      client.send({ t: 'shutdown' });
+      client.socket.end();
+    }
+    await delay(500);
+    child.kill();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 (async () => {
   await modelChecks();
   await serverChecks();
+  await reviveChecks();
 })().catch(error => { console.error(error); process.exitCode = 1; });

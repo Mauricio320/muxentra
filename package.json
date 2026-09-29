@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -339,8 +339,8 @@
         },
         "muxentra.openGitOnOpen": {
           "type": "boolean",
-          "default": true,
-          "description": "Muestra Git como primera pestaña dentro de Muxentra al abrir el panel. También puedes abrirlo con el botón Git de la barra."
+          "default": false,
+          "description": "Muestra la pestaña de Git desde el primer momento al abrir el panel. Apagado, el panel abre en la última pestaña de terminales que usaste y Git aparece cuando lo abres con el botón de la barra o con \"Muxentra: Abrir Git\"."
         },
         "muxentra.usageRefreshSeconds": {
           "type": "number",

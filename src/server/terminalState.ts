@@ -19,12 +19,15 @@ export class TerminalState {
   private margins: Record<'normal' | 'alternate', [number, number]>;
   private cursorVisible = true;
   private mouseEncoding = 0;
+  /** Último título que puso el programa (OSC 0/2); el shell lo cambia en cada prompt. */
+  title = '';
 
   constructor(readonly geometry: TerminalGeometry, scrollback: unknown) {
     this.margins = { normal: [1, geometry.rows], alternate: [1, geometry.rows] };
     this.terminal = new Terminal({
       ...geometry, scrollback: scrollbackSize(scrollback), allowProposedApi: true,
     });
+    this.terminal.onTitleChange(title => { this.title = title; });
     // El addon usa la API compartida con headless, aunque su .d.ts nombra la
     // Terminal del navegador (que también incluye métodos de DOM).
     this.terminal.loadAddon(this.serializer as unknown as ITerminalAddon);
@@ -101,6 +104,15 @@ export class TerminalState {
     if (!this.cursorVisible) data += '\x1b[?25l';
     if (this.mouseEncoding) data += `\x1b[?${this.mouseEncoding}h`;
     return { ...this.geometry, data: data + this.sequence };
+  }
+
+  /**
+   * Lo que merece sobrevivir a un reinicio del PC: el buffer normal con su
+   * historial y colores. Sin pantalla alternativa ni modos: sobre esto va a
+   * correr un shell nuevo, y un marco de TUI a medias solo dejaría basura.
+   */
+  historySnapshot(): TerminalSnapshot {
+    return { ...this.geometry, data: this.serializer.serialize({ excludeAltBuffer: true, excludeModes: true }) };
   }
 
   dispose(): void {

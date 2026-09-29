@@ -75,11 +75,11 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.11.0 build appears as `mauriciotriana.muxentra@0.11.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.12.0 build appears as `mauriciotriana.muxentra@0.12.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
-1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right. The icon-only Git tab comes first; a terminal tab is selected when the panel opens. Click the Git branch icon in the first tab, use the Git button beside the timer and bell, or use the next/previous tab shortcuts to open it. The toolbar button is disabled while Git is selected.
+1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right, on the terminal tab you were using last, with the cursor in its terminal. Git is one click away: the Git button beside the timer and bell, or "Muxentra: Abrir Git". Once open, the icon-only Git tab sits first in the tab bar and the next/previous tab shortcuts include it. The toolbar button is disabled while Git is selected. `muxentra.openGitOnOpen` puts the Git tab there from the start.
    On open, a one-second greeting draws the fluid M and then flies it into its slot in the tab bar while the workspace reveals underneath. It lasts exactly as long as the stroke takes and leaves the moment the active tab's terminals answer; Git loads on its own and never holds the workspace back. Any key or click dismisses it at once. Only if a terminal is slow does a progress line appear with what it is waiting for, and after three seconds an "Entrar ahora" button. With reduced motion there is no drawing and no minimum: the mark shows still and the workspace appears as soon as it is ready. `muxentra.openingAnimation` turns the greeting off entirely.
 2. Split it: `Ctrl+\` to the right, `Ctrl+Shift+\` downwards. Drag the dividers to share out the space, or run "Muxentra: Igualar tamaño de terminales" from the command palette.
 3. `Ctrl+Shift+T` opens another tab. `F2` renames it, right-click colours it, and `Shift+F2` renames the focused terminal.
@@ -102,7 +102,7 @@ The Git tab shows the workspace's repositories, commit graph, branches, local ch
 
 ![Local design preview of the Git workspace with sample commits](docs/premium-git.png)
 
-Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, while terminal processes stay alive for reconnection. Opening Git uses a brief fade and shift, which is disabled when reduced motion is requested. `muxentra.openGitOnOpen` shows the Git tab by default. If you turn it off, use the Git button or run "Muxentra: Abrir Git" from the command palette to show it. After upgrading from an older version with a separate "Muxentra Git" editor tab, reload the VS Code window to restore the unified panel.
+Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, while terminal processes stay alive for reconnection. Opening Git uses a brief fade and shift, which is disabled when reduced motion is requested. The Git tab appears when you open Git with the toolbar button or "Muxentra: Abrir Git"; `muxentra.openGitOnOpen` shows it from the start instead, without taking the focus away from your terminals. After upgrading from an older version with a separate "Muxentra Git" editor tab, reload the VS Code window to restore the unified panel.
 
 ## What it does
 
@@ -190,7 +190,7 @@ Worth knowing:
 - `muxentra.showBranch`: show or hide the git branch on each terminal.
 - `muxentra.lockEditorGroup`: lock the editor group when the panel opens.
 - `muxentra.openingAnimation`: the one-second greeting when the panel opens. On by default; off, the workspace appears directly. Applies the next time the panel is opened.
-- `muxentra.openGitOnOpen`: show Git as the first tab inside Muxentra. On by default; the Git toolbar button or "Muxentra: Abrir Git" can show it later when this setting is off.
+- `muxentra.openGitOnOpen`: show the Git tab from the moment the panel opens. Off by default: the panel opens on your last terminal tab, and Git appears when you open it with the toolbar button or "Muxentra: Abrir Git".
 - `muxentra.usageRefreshSeconds`: how often usage is re-read while the panel is visible.
 - `muxentra.imagePasteDir`: folder for pasted images. Defaults to `.muxentra-img`. It has to stay inside the workspace.
 - `muxentra.imagePasteMax`: how many pasted images are kept. Defaults to 6.
@@ -251,7 +251,7 @@ npm install
 npm run build        # builds extension and webview into dist/
 npm run watch        # rebuilds on save
 npm run typecheck    # tsc --noEmit
-npm run test:terminal # scrollback, replay and resize against a real pty
+npm run test:terminal # scrollback, replay, resize and revive after a server death, against a real pty
 npm run test:git    # repositories, branches, commits, diffs and worktrees
 npm run test:gitlab # GitLab author portraits and matching
 npm run test:usage   # quota sources, precedence and the statusLine bridge
@@ -296,6 +296,8 @@ The installer checks the SHA256 that GitHub publishes for each asset and refuses
 - Frontend: `@xterm/xterm` 6 inside a webview with `retainContextWhenHidden`.
 - Git renders in the same webview as the terminals, with its CSS isolated in a ShadowRoot. Git operations and optional GitLab portrait lookups run in the extension host.
 - Terminal server: `dist/server.js`, launched by the extension with VS Code's own executable in Node mode (`ELECTRON_RUN_AS_NODE`), detached. It listens on a per-user named pipe (Windows) or unix socket. A headless xterm keeps the terminal state and the configured scrollback (20000 lines by default, up to 100000). Reconnect restores a serialized snapshot at its original dimensions, then fits visible panes. Hidden panes keep their existing dimensions. Snapshot, output and resize share one ordered queue. It shuts itself down after 5 minutes with no terminals and no clients. Its log lives in `<globalStorage>/server.log` and rotates at 512 KB.
+
+The server also writes each terminal's history to disk, under `<globalStorage>/sessions/`, whenever the last window disconnects and every two minutes while there is new output. Shell processes cannot survive a shutdown or a reboot, but the next server finds those files: each terminal comes back with its previous scrollback on top, a dim `── sesión anterior · <date> ──` line, and a fresh shell underneath. If Claude Code or Codex was running there, its resume command (`claude --continue` or `codex resume --last`) is typed at the new prompt without pressing Enter, so one keystroke brings the conversation back and Ctrl+C discards it. Only the normal buffer is saved, never a TUI's alternate screen. Closing a terminal on purpose, or the shell exiting by itself, deletes its file; unclaimed files are removed after 14 days.
 
 When upgrading from a server without state replay, Muxentra keeps existing sessions alive and displays a notice. Finish and close those terminals before restarting the old server; reloading the extension alone does not replace that process. Already discarded history cannot be recovered from the previous 1 MB buffer.
 

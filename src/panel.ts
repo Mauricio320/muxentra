@@ -175,6 +175,12 @@ export class MuxentraPanel {
         this.clearActivity(termId);
         this.post({ type: 'exit', termId, code });
       },
+      onRevived: (termId, snapshot, resume) => {
+        // El historial del disco va delante de lo que diga el shell nuevo.
+        this.pending.delete(termId);
+        this.post({ type: 'restore', termId, snapshot, resume });
+        this.receiving.add(termId);
+      },
       onAttached: (termId, found, data, snapshot) => {
         const dims = this.attachDims.get(termId) ?? { cols: 80, rows: 24 };
         this.attachDims.delete(termId);
@@ -449,7 +455,8 @@ export class MuxentraPanel {
           alive,
           exited: this.ptys.takeExited(),
           showUsage: usageEnabled(),
-          showGit: vscode.workspace.getConfiguration('muxentra').get<boolean>('openGitOnOpen', true) || this.pendingOpenGit,
+          // El panel abre en la última pestaña de terminales; Git solo si el usuario lo pide.
+          showGit: vscode.workspace.getConfiguration('muxentra').get<boolean>('openGitOnOpen', false) || this.pendingOpenGit,
           focusTimer: this.focusTimer,
         });
         this.webviewReady = true;
