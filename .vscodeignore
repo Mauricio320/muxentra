@@ -10,6 +10,9 @@ package-lock.json
 **/*.map
 **/*.pdb
 **/*.vsix
+dist/visual-review/**
+dist/qa-*.py
+debug.log
 node_modules/node-pty/build/**
 node_modules/node-pty/src/**
 node_modules/node-pty/deps/**

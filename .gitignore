@@ -3,3 +3,6 @@ dist/
 *.vsix
 
 .engram/
+
+# Ruido de crashpad que Chromium deja al lanzar VS Code desde la consola.
+debug.log

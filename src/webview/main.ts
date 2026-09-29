@@ -3,7 +3,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
+import { brandMark } from '../brand';
+import { formatReset, preferredUsageReset } from './usageReset';
 import { defaultFocusTimer, validFocusSound, type FocusPhase, type FocusSound, type FocusTimerState } from '../focusTimer';
+import { mountGitView } from '../gitView/main';
 import type {
   HostMessage,
   LayoutNode,
@@ -148,6 +151,11 @@ let theme: ITheme = buildTheme();
 
 const tabbarEl = document.getElementById('tabbar') as HTMLElement;
 const contentEl = document.getElementById('content') as HTMLElement;
+const gitEl = document.getElementById('git-view') as HTMLElement;
+let gitView: ReturnType<typeof mountGitView>;
+let gitEnabled = false;
+let gitActive = false;
+let gitLoaded = false;
 const usageEl = document.getElementById('usage') as HTMLElement;
 const usagePopoverEl = document.getElementById('usage-popover') as HTMLElement;
 const bottomBarEl = document.getElementById('bottom-bar') as HTMLElement;
@@ -168,8 +176,91 @@ const focusActionsEl = document.getElementById('focus-actions') as HTMLElement;
 const focusToggleEl = document.getElementById('focus-toggle') as HTMLButtonElement;
 const focusSkipEl = document.getElementById('focus-skip') as HTMLButtonElement;
 const focusStopEl = document.getElementById('focus-stop') as HTMLButtonElement;
+const bootEl = document.getElementById('boot') as HTMLElement;
+const bootStatusEl = document.getElementById('boot-status') as HTMLElement;
+const bootProgressEl = document.getElementById('boot-progress-fill') as HTMLElement;
+const bootSkipEl = document.getElementById('boot-skip') as HTMLButtonElement;
 let focusTimer = defaultFocusTimer();
 let focusPopoverOpen = false;
+let bootInitialized = false;
+let bootDismissed = false;
+let bootMinimumElapsed = false;
+const bootReady = new Set<string>();
+const bootMinimumTimer = window.setTimeout(() => {
+  bootMinimumElapsed = true;
+  updateBoot();
+}, 4_000);
+const bootWaitTimer = window.setTimeout(() => {
+  if (bootDismissed) return;
+  bootStatusEl.textContent = 'La carga está tardando más de lo habitual.';
+  bootSkipEl.hidden = false;
+}, 10_000);
+
+function updateBoot(): void {
+  if (!bootInitialized || bootDismissed) return;
+  const tab = activeTab();
+  const ids = tab ? L.leaves(tab.root).map(leaf => leaf.termId) : [];
+  const total = ids.length + (gitEnabled ? 1 : 0);
+  const ready = ids.filter(id => bootReady.has(id)).length + (gitEnabled && gitLoaded ? 1 : 0);
+  bootProgressEl.style.transform = `scaleX(${total ? ready / total : 1})`;
+  document.getElementById('boot-terminals')?.classList.toggle('is-ready', ids.every(id => bootReady.has(id)));
+  const gitStep = document.getElementById('boot-git');
+  if (gitStep) {
+    gitStep.hidden = !gitEnabled;
+    gitStep.classList.toggle('is-ready', gitLoaded);
+  }
+  document.getElementById('boot-workspace')?.classList.toggle('is-ready', ready === total);
+  if (ready === total) {
+    bootStatusEl.textContent = 'Tu espacio está listo.';
+    if (bootMinimumElapsed) dismissBoot();
+  } else if (bootSkipEl.hidden) {
+    bootStatusEl.textContent = gitEnabled && !gitLoaded && ready === ids.length
+      ? 'Cargando el historial Git…'
+      : ready === 0
+        ? `Recuperando ${ids.length} ${ids.length === 1 ? 'terminal' : 'terminales'}…`
+        : `Preparando el espacio · ${ready} de ${total} listo${total === 1 ? '' : 's'}…`;
+  }
+}
+
+function markBootReady(termId: string): void {
+  if (bootDismissed) return;
+  bootReady.add(termId);
+  updateBoot();
+}
+
+function beginBoot(): void {
+  bootInitialized = true;
+  bootEl.classList.add('has-target');
+  updateBoot();
+}
+
+function dismissBoot(ready = true): void {
+  if (bootDismissed) return;
+  bootDismissed = true;
+  window.clearTimeout(bootMinimumTimer);
+  window.clearTimeout(bootWaitTimer);
+  if (ready) {
+    bootStatusEl.textContent = 'Tu espacio está listo.';
+    bootProgressEl.style.transform = 'scaleX(1)';
+    document.getElementById('boot-workspace')?.classList.add('is-ready');
+  }
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.requestAnimationFrame(() => {
+    bootEl.classList.add('is-leaving');
+    document.getElementById('app')?.classList.add('workspace-ready');
+    window.setTimeout(() => {
+      bootEl.hidden = true;
+      document.getElementById('app')?.setAttribute('aria-busy', 'false');
+      tabbarEl.removeAttribute('inert');
+      contentEl.removeAttribute('inert');
+      gitEl.removeAttribute('inert');
+      bottomBarEl.removeAttribute('inert');
+      if (!gitActive) activePane()?.term.focus();
+    }, reducedMotion ? 0 : 480);
+  });
+}
+
+bootSkipEl.addEventListener('click', () => dismissBoot(false));
 
 // ---------------------------------------------------------------- estado
 
@@ -859,13 +950,16 @@ function restoreReadingPosition(pane: Pane, view: ReadingPosition | undefined): 
   pane.term.scrollToLine(Math.min(view.line, buf.baseY));
 }
 
-function writeKeepingView(pane: Pane, data: string): void {
+function writeKeepingView(pane: Pane, data: string, done?: () => void): void {
   const view = readingPosition(pane);
   if (!view) {
-    pane.term.write(data);
+    pane.term.write(data, done);
     return;
   }
-  pane.term.write(data, () => restoreReadingPosition(pane, view));
+  pane.term.write(data, () => {
+    restoreReadingPosition(pane, view);
+    done?.();
+  });
 }
 
 // ---------------------------------------------------------------- replay
@@ -889,6 +983,7 @@ function restoreTerminal(pane: Pane, snapshot: TerminalSnapshot): void {
       for (const data of pane.restorePending.splice(0)) writeKeepingView(pane, data);
       scheduleFit(pane);
       persist();
+      markBootReady(pane.termId);
     });
   });
 }
@@ -962,7 +1057,7 @@ function focusPane(termId: string): void {
   }
   updateActiveClasses(tab);
   const pane = panes.get(termId);
-  if (pane?.opened) pane.term.focus();
+  if (pane?.opened && bootDismissed) pane.term.focus();
 }
 
 // ---------------------------------------------------------------- render del árbol
@@ -1192,10 +1287,39 @@ window.addEventListener(
 
 function renderTabBar(): void {
   tabbarEl.replaceChildren();
+  const brand = document.createElement('span');
+  brand.className = 'workspace-brand';
+  brand.title = 'Muxentra';
+  brand.setAttribute('aria-label', 'Muxentra');
+  brand.innerHTML = brandMark('toolbar');
+  const tabs = document.createElement('div');
+  tabs.className = 'workspace-tabs';
+  const actions = document.createElement('div');
+  actions.className = 'workspace-actions';
+  tabbarEl.append(brand, tabs, actions);
+  if (gitEnabled) {
+    const gitTab = document.createElement('button');
+    gitTab.type = 'button';
+    gitTab.className = `tab git-tab${gitActive ? ' active' : ''}`;
+    gitTab.title = 'Historial Git';
+    gitTab.setAttribute('aria-label', 'Historial Git');
+    gitTab.setAttribute('aria-pressed', String(gitActive));
+    gitTab.innerHTML = ICONS.branch;
+    gitTab.addEventListener('click', activateGit);
+    tabs.append(gitTab);
+  }
   for (const tab of state.tabs) {
     const el = document.createElement('div');
-    el.className = 'tab' + (tab.id === state.activeTabId ? ' active' : '');
+    el.className = 'tab' + (!gitActive && tab.id === state.activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-pressed', String(!gitActive && tab.id === state.activeTabId));
+    el.addEventListener('keydown', event => {
+      if (event.target !== el || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      activateTab(tab.id);
+    });
 
     const color = colorValue(tab.color);
     if (color) {
@@ -1222,7 +1346,7 @@ function renderTabBar(): void {
 
     el.append(name, close);
     el.addEventListener('click', () => {
-      if (state.activeTabId !== tab.id) activateTab(tab.id);
+      if (gitActive || state.activeTabId !== tab.id) activateTab(tab.id);
       else activePane()?.term.focus();
     });
     el.addEventListener('dblclick', () => beginRename(tab.id));
@@ -1233,10 +1357,14 @@ function renderTabBar(): void {
       ev.preventDefault();
       showTabMenu(tab.id, ev.clientX, ev.clientY);
     });
-    tabbarEl.append(el);
+    tabs.append(el);
   }
   const add = iconButton(ICONS.add, 'Nueva pestaña (Ctrl+Shift+T)', () => newTab());
   add.classList.add('tab-add');
+  const openGit = iconButton(ICONS.branch, gitActive ? 'Git ya está abierto' : 'Abrir Git', activateGit);
+  openGit.classList.add('tab-git-action');
+  openGit.setAttribute('aria-label', openGit.title);
+  openGit.disabled = gitActive;
   const focus = iconButton(ICONS.timer, 'Configurar temporizador de enfoque', () => setFocusPopover(!focusPopoverOpen));
   focus.classList.add('tab-focus');
   focus.classList.toggle('active', focusTimer.enabled);
@@ -1251,7 +1379,8 @@ function renderTabBar(): void {
   notifications.classList.add('tab-notifications');
   notifications.setAttribute('aria-label', notifications.title);
   notifications.setAttribute('aria-pressed', String(settings.notificationsEnabled));
-  tabbarEl.append(add, focus, notifications);
+  actions.append(add, openGit, focus, notifications);
+  tabs.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 // ---------------------------------------------------------------- menú de pestaña
@@ -1381,6 +1510,12 @@ function beginRename(tabId: string): void {
 // ---------------------------------------------------------------- acciones
 
 function activateTab(tabId: string): void {
+  if (gitActive) post({ type: 'gitVisibility', visible: false });
+  gitActive = false;
+  contentEl.hidden = false;
+  gitEl.hidden = true;
+  gitEl.classList.remove('git-entering');
+  updateBottomBarVisibility();
   state.activeTabId = tabId;
   for (const tab of state.tabs) ensureContent(tab).hidden = tab.id !== tabId;
   renderTabBar();
@@ -1394,10 +1529,25 @@ function activateTab(tabId: string): void {
         const pane = panes.get(lf.termId);
         if (pane?.opened) pane.term.refresh(0, pane.term.rows - 1);
       }
-      panes.get(tab.activeTermId)?.term.focus();
+      if (bootDismissed) panes.get(tab.activeTermId)?.term.focus();
     });
   }
+  updateBoot();
   persist();
+}
+
+function activateGit(): void {
+  if (gitActive) return;
+  gitEnabled = true;
+  gitActive = true;
+  post({ type: 'gitVisibility', visible: true });
+  contentEl.hidden = true;
+  gitEl.hidden = false;
+  gitEl.classList.add('git-entering');
+  setFocusPopover(false);
+  updateBottomBarVisibility();
+  renderTabBar();
+  post({ type: 'git', message: { type: 'refresh' } });
 }
 
 function newTab(): void {
@@ -1438,6 +1588,7 @@ function removeTabEntry(tab: TabState): void {
   state.tabs.splice(index, 1);
   if (state.tabs.length === 0) {
     newTab();
+    updateBoot();
     return;
   }
   if (state.activeTabId === tab.id) {
@@ -1449,10 +1600,13 @@ function removeTabEntry(tab: TabState): void {
 }
 
 function cycleTab(delta: number): void {
-  const count = state.tabs.length;
+  const ids = gitEnabled ? ['git', ...state.tabs.map(tab => tab.id)] : state.tabs.map(tab => tab.id);
+  const count = ids.length;
   if (count < 2) return;
-  const index = state.tabs.findIndex(t => t.id === state.activeTabId);
-  activateTab(state.tabs[(index + delta + count) % count].id);
+  const index = ids.indexOf(gitActive ? 'git' : state.activeTabId);
+  const next = ids[(index + delta + count) % count];
+  if (next === 'git') activateGit();
+  else activateTab(next);
 }
 
 function split(dir: SplitDir, sourceTermId?: string): void {
@@ -1503,7 +1657,8 @@ function runCommand(command: MuxentraCommand, arg?: string): void {
       newTab();
       break;
     case 'closeTab':
-      closeTab(state.activeTabId);
+      if (gitActive) activateTab(state.activeTabId);
+      else closeTab(state.activeTabId);
       break;
     case 'renameTab':
       beginRename(state.activeTabId);
@@ -1567,14 +1722,17 @@ function runCommand(command: MuxentraCommand, arg?: string): void {
     }
     case 'refit':
       fitVisible();
-      activePane()?.term.focus();
+      if (!gitActive) activePane()?.term.focus();
+      break;
+    case 'openGit':
+      activateGit();
       break;
     case 'focusTerm': {
       const termId = arg && panes.has(arg) ? arg : undefined;
       if (!termId) break;
       const tab = tabOf(termId);
       if (!tab) break;
-      if (tab.id !== state.activeTabId) activateTab(tab.id);
+      if (gitActive || tab.id !== state.activeTabId) activateTab(tab.id);
       focusPane(termId);
       break;
     }
@@ -1600,6 +1758,15 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
   const mac = settings.platform === 'darwin';
   const mod = mac ? ev.metaKey : ev.ctrlKey;
 
+  // xterm envía \r tanto para Enter como para Shift+Enter. La secuencia CSI-u
+  // conserva el modificador para que Claude Code inserte una línea nueva.
+  if (key === 'enter' && ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.isComposing) {
+    if (ev.type === 'keydown') pane.term.input('\x1b[13;2u');
+    ev.preventDefault();
+    ev.stopPropagation();
+    return false;
+  }
+
   if (ev.type === 'keydown' && mod && !ev.shiftKey && !ev.altKey && key === 'c' && pane.term.hasSelection()) {
     post({ type: 'copy', text: pane.term.getSelection() });
     pane.term.clearSelection();
@@ -1618,7 +1785,7 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
 // ---------------------------------------------------------------- temporizador de enfoque
 
 function updateBottomBarVisibility(): void {
-  bottomBarEl.hidden = !showUsage && !focusTimer.enabled;
+  bottomBarEl.hidden = gitActive || (!showUsage && !focusTimer.enabled);
 }
 
 function setFocusPopover(open: boolean, anchor: 'top' | 'bottom' = 'top'): void {
@@ -1715,19 +1882,6 @@ let showUsage = true;
 let usageSnapshot: UsageSnapshot | null = null;
 let openUsageId: UsageItem['id'] | null = null;
 
-/** "2h 13m", "3d 22h" o "ahora" para el momento en que se reinicia una ventana. */
-function formatReset(resetsAt: number | undefined): string | undefined {
-  if (!resetsAt) return undefined;
-  const seconds = resetsAt - Date.now() / 1000;
-  if (seconds <= 0) return 'ahora';
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
 function severity(percent: number): string {
   if (percent >= 0.85) return 'crit';
   if (percent >= 0.6) return 'warn';
@@ -1773,9 +1927,6 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
   el.dataset.provider = item.id;
   el.setAttribute('aria-controls', 'usage-popover');
   el.setAttribute('aria-expanded', String(openUsageId === item.id));
-  const summary = item.windows.map(w => `${w.label} ${w.percent === undefined ? 'pendiente' : `${Math.round(w.percent * 100)}%`}`).join(', ');
-  el.setAttribute('aria-label', `${item.label}: ${summary || 'sin datos de cuota'}. Ver detalle`);
-  el.style.setProperty('--usage-brand', item.id === 'claude' ? '#e07a5f' : '#22c55e');
 
   const provider = document.createElement('span');
   provider.className = 'usage-provider';
@@ -1792,14 +1943,11 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
   label.textContent = item.label;
 
   identity.append(label);
-  if (item.plan) {
-    const plan = document.createElement('span');
-    plan.className = 'usage-plan';
-    plan.textContent = item.plan;
-    identity.append(plan);
-  }
   provider.append(icon, identity);
   el.append(provider);
+
+  const metrics = document.createElement('span');
+  metrics.className = 'usage-metrics';
 
   for (const w of item.windows.length ? item.windows : [{ label: 'uso', percent: undefined, stale: false }]) {
     const percent = w.percent === undefined ? undefined : Math.round(w.percent * 100);
@@ -1827,8 +1975,14 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
     value.textContent = percent === undefined ? '—' : `${percent}%`;
 
     chunk.append(name, bar, value);
-    el.append(chunk);
+    metrics.append(chunk);
   }
+
+  const reset = document.createElement('span');
+  reset.className = 'usage-reset';
+  reset.innerHTML = `${ICONS.timer}<strong class="usage-reset-time"></strong>`;
+  metrics.firstElementChild!.append(reset);
+  el.append(metrics);
 
   const status = item.windows.length ? item.detail : item.error ? 'Lectura pendiente' : 'Sin datos de cuota';
   if (status) {
@@ -1837,10 +1991,10 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
     detail.classList.add('status');
     if (!item.windows.length) detail.classList.add('pending');
     detail.textContent = status;
-    el.append(detail);
+    metrics.append(detail);
   }
 
-  el.title = usageTooltip(item);
+  updateUsageReset(el, item);
   el.addEventListener('click', () => {
     if (focusPopoverOpen) setFocusPopover(false);
     openUsageId = openUsageId === item.id ? null : item.id;
@@ -1848,6 +2002,43 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
   });
   return el;
 }
+
+function updateUsageReset(el: HTMLButtonElement, item: UsageItem): void {
+  const reset = el.querySelector<HTMLElement>('.usage-reset')!;
+  const window = preferredUsageReset(item.windows);
+  const duration = formatReset(window?.resetsAt);
+  const period = window?.label === '5h' ? '5h' : 'semanal';
+  const targetWindow = window
+    ?? item.windows.find(w => w.label === '5h')
+    ?? item.windows.find(w => w.label === '7d' || w.label === 'semana');
+  const chunks = el.querySelectorAll<HTMLElement>('.usage-win');
+  const target = chunks[Math.max(0, targetWindow ? item.windows.indexOf(targetWindow) : 0)];
+  if (reset.parentElement !== target) {
+    reset.parentElement?.classList.remove('has-reset');
+    target.append(reset);
+  }
+  target.classList.add('has-reset');
+  reset.classList.toggle('pending', !window);
+  reset.dataset.window = window ? period : '';
+  reset.querySelector('.usage-reset-time')!.textContent = duration ?? '—';
+  reset.title = window ? `Reinicio ${period} en ${duration} · ${new Date(window.resetsAt! * 1000).toLocaleString()}` : 'Reinicio pendiente: sin un horario actualizado.';
+  const summary = item.windows.map(w => `${w.label} ${w.percent === undefined ? 'pendiente' : `${Math.round(w.percent * 100)}%`}`).join(', ');
+  const resetSummary = window ? `Reinicio ${period} en ${duration}` : 'Reinicio pendiente';
+  el.setAttribute('aria-label', `${item.label}: ${summary || 'sin datos de cuota'}. ${resetSummary}. Ver detalle`);
+  el.title = usageTooltip(item);
+}
+
+function refreshUsageResets(): void {
+  if (!showUsage || document.hidden || usageEl.hidden) return;
+  for (const el of usageEl.querySelectorAll<HTMLButtonElement>('.usage-item')) {
+    const item = usageSnapshot?.items.find(item => item.id === el.dataset.provider);
+    if (item) updateUsageReset(el, item);
+  }
+}
+
+// Update the countdown in place without recreating cards, moving focus or polling providers.
+window.setInterval(refreshUsageResets, 30_000);
+document.addEventListener('visibilitychange', refreshUsageResets);
 
 function renderUsagePopover(): void {
   const item = usageSnapshot?.items.find(value => value.id === openUsageId);
@@ -1966,6 +2157,7 @@ document.addEventListener('mousedown', ev => {
 // ---------------------------------------------------------------- mensajes del host
 
 async function onInit(msg: Extract<HostMessage, { type: 'init' }>): Promise<void> {
+  gitEnabled = msg.showGit;
   await applySettings(msg.settings);
   showUsage = msg.showUsage;
   renderUsage(usageSnapshot);
@@ -2000,6 +2192,7 @@ async function onInit(msg: Extract<HostMessage, { type: 'init' }>): Promise<void
 
   if (state.tabs.length === 0) {
     newTab();
+    beginBoot();
     return;
   }
   if (!state.tabs.some(t => t.id === state.activeTabId)) state.activeTabId = state.tabs[0].id;
@@ -2007,24 +2200,30 @@ async function onInit(msg: Extract<HostMessage, { type: 'init' }>): Promise<void
   for (const tab of state.tabs) ensureContent(tab);
   for (const tab of state.tabs) renderTab(tab);
   activateTab(state.activeTabId);
+  beginBoot();
   for (const tab of state.tabs) {
     for (const lf of L.leaves(tab.root)) startPane(lf.termId, alive.has(lf.termId));
   }
   persist();
 }
 
+let initPromise: Promise<void> = Promise.resolve();
 window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
   const msg = ev.data;
   switch (msg.type) {
     case 'init':
-      void onInit(msg);
+      initPromise = onInit(msg);
+      break;
+    case 'git':
+      gitView.handleMessage(msg.message);
       break;
     case 'data': {
       const pane = panes.get(msg.termId);
       if (pane) {
         noteOutput(pane, msg.data);
         if (pane.restoring) pane.restorePending.push(msg.data);
-        else writeKeepingView(pane, msg.data);
+        else writeKeepingView(pane, msg.data,
+          !bootDismissed && !bootReady.has(msg.termId) ? () => markBootReady(msg.termId) : undefined);
       }
       break;
     }
@@ -2039,15 +2238,21 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
         if (msg.geometry.windowsPty) pane.term.options.windowsPty = msg.geometry.windowsPty;
         pane.started = true;
         scheduleFit(pane);
+        if (!bootDismissed && !bootReady.has(msg.termId)) {
+          window.setTimeout(() => {
+            if (panes.get(msg.termId) === pane && !pane.restoring) markBootReady(msg.termId);
+          }, 1_500);
+        }
       }
       break;
     }
     case 'exit':
       closePane(msg.termId, true);
+      updateBoot();
       break;
     case 'spawnError': {
       const pane = panes.get(msg.termId);
-      pane?.term.write(`\r\n\x1b[31mNo se pudo iniciar el shell: ${msg.message}\x1b[0m\r\n`);
+      pane?.term.write(`\r\n\x1b[31mNo se pudo iniciar el shell: ${msg.message}\x1b[0m\r\n`, () => markBootReady(msg.termId));
       break;
     }
     case 'serverLost':
@@ -2074,7 +2279,7 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       setBranch(msg.termId, msg.branch, msg.detached, msg.cwd);
       break;
     case 'command':
-      runCommand(msg.command, msg.arg);
+      void initPromise.then(() => runCommand(msg.command, msg.arg));
       break;
   }
 });
@@ -2084,6 +2289,13 @@ new MutationObserver(applyTheme).observe(document.documentElement, {
   attributeFilter: ['style', 'class'],
 });
 new MutationObserver(applyTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-window.addEventListener('focus', () => activePane()?.term.focus());
+window.addEventListener('focus', () => { if (bootDismissed && !gitActive) activePane()?.term.focus(); });
 
+gitView = mountGitView(gitEl, gitEl.dataset.styleUri ?? '', message => post({ type: 'git', message }), () => {
+  gitLoaded = true;
+  updateBoot();
+});
+const syncGitTheme = (): void => { gitEl.classList.toggle('vscode-light', document.body.classList.contains('vscode-light')); };
+syncGitTheme();
+new MutationObserver(syncGitTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 post({ type: 'ready' });

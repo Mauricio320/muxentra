@@ -1,12 +1,12 @@
 {
   "name": "muxentra",
   "displayName": "Muxentra",
-  "description": "Terminales múltiples, splits anidados y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.8.0",
+  "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
+  "version": "0.10.3",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
-    "color": "#071510",
+    "color": "#1b1b1e",
     "theme": "dark"
   },
   "license": "MIT",
@@ -41,7 +41,8 @@
   },
   "activationEvents": [
     "onWebviewPanel:muxentra",
-    "onWebviewPanel:orcaTerminals"
+    "onWebviewPanel:orcaTerminals",
+    "onWebviewPanel:muxentraGit"
   ],
   "contributes": {
     "commands": [
@@ -53,6 +54,11 @@
       {
         "command": "muxentra.open",
         "title": "Abrir terminales",
+        "category": "Muxentra"
+      },
+      {
+        "command": "muxentra.openGit",
+        "title": "Abrir Git",
         "category": "Muxentra"
       },
       {
@@ -326,6 +332,11 @@
           "default": true,
           "description": "Bloquea el grupo de editores al abrir el panel, para que los archivos no se abran encima de las terminales. Se puede desbloquear con el candado de VS Code."
         },
+        "muxentra.openGitOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Muestra Git como primera pestaña dentro de Muxentra al abrir el panel. También puedes abrirlo con el botón Git de la barra."
+        },
         "muxentra.usageRefreshSeconds": {
           "type": "number",
           "default": 60,
@@ -357,7 +368,10 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit -p ./",
     "test:terminal": "node tools/terminal-regression.cjs",
+    "test:git": "node tools/gitExplorer-regression.cjs",
+    "test:gitlab": "node tools/gitlabAvatars-regression.cjs",
     "test:usage": "node tools/usage-regression.cjs",
+    "test:usage-reset": "node --experimental-strip-types tools/usageReset-regression.mjs",
     "test:focus": "node --experimental-strip-types tools/focusTimer-regression.mjs",
     "package": "vsce package"
   },

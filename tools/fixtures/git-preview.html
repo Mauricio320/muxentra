@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../dist/webview.css">
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+    #app { flex: 1 1 auto; min-height: 0; }
+    :root {
+      --vscode-editor-background: #1b1d24;
+      --vscode-editor-foreground: #e6e8ee;
+      --vscode-foreground: #dce0e9;
+      --vscode-font-family: "Segoe UI", sans-serif;
+      --vscode-editor-font-family: Consolas, monospace;
+      --vscode-sideBar-background: #22252f;
+      --vscode-panel-border: #3b3d48;
+      --vscode-list-hoverBackground: #292d38;
+      --vscode-list-activeSelectionBackground: #373455;
+      --vscode-focusBorder: #aa91f5;
+      --vscode-dropdown-background: #292c36;
+      --vscode-dropdown-foreground: #e6ece8;
+      --vscode-input-background: #292c36;
+      --vscode-input-foreground: #e6e8ee;
+    }
+  </style>
+  <script>window.acquireVsCodeApi = () => ({ postMessage() {} });</script>
+</head>
+<body>
+  <div id="tabbar">
+    <button class="tab git-tab active" type="button" aria-label="Historial Git"><svg viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.2-1.9 3.2-4.2 3.6"/></svg></button>
+    <button class="tab" type="button"><span class="tab-name">Terminal 1</span></button>
+    <button class="icon-btn tab-add" type="button" aria-label="Nueva pestaña"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+    <button class="icon-btn tab-git-action" type="button" aria-label="Git ya está abierto" disabled><svg viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.2-1.9 3.2-4.2 3.6"/></svg></button>
+  </div>
+  <div id="app"></div>
+  <script src="../../dist/gitView.js"></script>
+  <script>
+    const hashes = Array.from({ length: 22 }, (_, i) => (i + 1).toString(16).padStart(40, '0'));
+    const subjects = [
+      'feat(retenciones): soporta retención asumida y recálculo de asiento DS',
+      'fix(documentos-soporte): adjuntar archivos al documento soporte',
+      'chore: integra main en feature/autorretencion-documento-factura-aprobada',
+      'feat(contabilidad): contabiliza documento soporte y CxP sin huecos ni duplicados',
+      'fix(facturas-venta): quita autorretenciones del PDF de factura y adjuntos',
+      'feat(contabilidad): retenciones, banco de origen y pagos por abono en CxP',
+    ];
+    const snapshot = {
+      repository: { root: 'C:\\Users\\Mauricio\\renova365\\api', label: 'api', branch: 'feature/autorretencion-documento-factura-aprobada', detached: false },
+      repositories: [
+        { root: 'C:\\Users\\Mauricio\\renova365\\api', label: 'api', branch: 'feature/autorretencion-documento-factura-aprobada', detached: false },
+        { root: 'C:\\Users\\Mauricio\\renova365\\client', label: 'client', branch: 'develop', detached: false },
+      ],
+      selectedRef: '',
+      gitlabAvatarsAvailable: true,
+      branches: [
+        { name: 'feature/autorretencion-documento-factura-aprobada', fullRef: 'refs/heads/feature/autorretencion-documento-factura-aprobada', hash: hashes[0], current: true, remote: false },
+        { name: 'main', fullRef: 'refs/heads/main', hash: hashes[3], current: false, remote: false },
+        { name: 'develop', fullRef: 'refs/heads/develop', hash: hashes[5], current: false, remote: false },
+        { name: 'origin/main', fullRef: 'refs/remotes/origin/main', hash: hashes[3], current: false, remote: true },
+      ],
+      worktrees: [
+        { path: 'C:\\Users\\Mauricio\\renova365\\api', hash: hashes[0], branch: 'feature/autorretencion-documento-factura-aprobada' },
+        { path: 'C:\\Users\\Mauricio\\renova365\\.worktrees\\revision', hash: hashes[4], branch: 'review/documento-soporte' },
+      ],
+      changes: [
+        { path: 'src/documento-soporte/services/retenciones.service.ts', status: ' M', staged: false, untracked: false },
+        { path: 'src/contabilidad/reportes/causacion.ts', status: 'M ', staged: true, untracked: false },
+        { path: 'src/documento-soporte/dto/ajustes.dto.ts', status: '??', staged: false, untracked: true },
+      ],
+      commits: hashes.map((hash, i) => ({
+        hash, shortHash: hash.slice(0, 8), parents: i < hashes.length - 1 ? [hashes[i + 1], ...(i === 2 ? [hashes[8]] : [])] : [],
+        subject: subjects[i % subjects.length], author: i % 3 === 0 ? 'Mauricio Triana' : i % 3 === 1 ? 'Yeferson' : 'John Chaverra',
+        email: i % 3 === 0 ? 'mauricio@example.com' : i % 3 === 1 ? 'yeferson@example.com' : 'john@example.com',
+        avatarUrl: i % 3 === 0 ? 'https://www.gravatar.com/avatar/27205e5c51cb03f862138b22bcb5dc20f94a342e744ff6df1b8dc8af3c865109?s=64&d=404' : i % 3 === 1 ? 'https://github.com/octocat.png?size=64' : undefined,
+        date: new Date(Date.now() - i * 86400000).toISOString(), refs: i === 0 ? ['HEAD -> feature/autorretencion-documento-factura-aprobada'] : i === 3 ? ['main', 'origin/main'] : [],
+      })),
+    };
+    window.postMessage({ type: 'snapshot', snapshot }, '*');
+    if (location.hash === '#detail') {
+      setTimeout(() => {
+        document.getElementById('app').shadowRoot.querySelector('.commit-row')?.click();
+        window.postMessage({ type: 'detail', detail: {
+        hash: hashes[0], subject: subjects[0], body: subjects[0] + '\n\nSe calcula la retención causada y se sincroniza con el asiento contable.',
+        author: 'Mauricio Triana', email: 'mauricio@example.com', avatarUrl: 'https://www.gravatar.com/avatar/27205e5c51cb03f862138b22bcb5dc20f94a342e744ff6df1b8dc8af3c865109?s=64&d=404', date: new Date().toISOString(), parents: [hashes[1]],
+        files: [
+          { path: 'src/documento-soporte/services/retenciones.service.ts', status: 'M' },
+          { path: 'src/contabilidad/reportes/causacion.ts', status: 'M' },
+          { path: 'src/documento-soporte/dto/ajustes.dto.ts', status: 'A' },
+        ],
+        } }, '*');
+      }, 50);
+    }
+  </script>
+</body>
+</html>

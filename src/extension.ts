@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { saveClipboardImage } from './clipboardImage';
 import { installClaudeUsage } from './claudeUsageSetup';
+import { GitExplorer } from './gitExplorer';
+import { registerGitDocumentProvider } from './gitPanel';
 import { log } from './log';
 import { MuxentraPanel } from './panel';
 import type { MuxentraCommand } from './protocol';
@@ -30,22 +32,37 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // Los shells viven en un servidor aparte: al desactivar solo se corta la conexión.
   const ptys = new PtyClient(ctx);
   ctx.subscriptions.push({ dispose: () => ptys.dispose() });
+  const git = new GitExplorer(vscode.workspace.getConfiguration('git').get<string>('path') || 'git');
+  registerGitDocumentProvider(ctx, git);
+  const openMuxentra = (): void => {
+    MuxentraPanel.createOrShow(ctx, ptys, git);
+  };
 
   for (const viewType of [MuxentraPanel.viewType, MuxentraPanel.legacyViewType]) {
     ctx.subscriptions.push(
       vscode.window.registerWebviewPanelSerializer(viewType, {
         async deserializeWebviewPanel(panel: vscode.WebviewPanel) {
-          MuxentraPanel.revive(panel, ctx, ptys);
+          MuxentraPanel.revive(panel, ctx, ptys, git);
         },
       }),
     );
   }
+  // Migra las pestañas Git de versiones anteriores al panel unificado.
+  ctx.subscriptions.push(vscode.window.registerWebviewPanelSerializer('muxentraGit', {
+    async deserializeWebviewPanel(panel: vscode.WebviewPanel) {
+      panel.dispose();
+      setTimeout(() => {
+        if (!MuxentraPanel.isOpen()) MuxentraPanel.createOrShow(ctx, ptys, git);
+      }, 700);
+    },
+  }));
 
   const register = (id: string, handler: (...args: unknown[]) => unknown): void => {
     ctx.subscriptions.push(vscode.commands.registerCommand(id, handler));
   };
 
-  register('muxentra.open', () => MuxentraPanel.createOrShow(ctx, ptys));
+  register('muxentra.open', openMuxentra);
+  register('muxentra.openGit', () => MuxentraPanel.createOrShow(ctx, ptys, git, true));
 
   register('muxentra.connectClaudeUsage', () => {
     try {
@@ -58,7 +75,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
   for (const command of FORWARDED) {
     register(`muxentra.${command}`, () => {
-      if (!MuxentraPanel.send(command)) MuxentraPanel.createOrShow(ctx, ptys);
+      if (!MuxentraPanel.send(command)) openMuxentra();
     });
   }
 

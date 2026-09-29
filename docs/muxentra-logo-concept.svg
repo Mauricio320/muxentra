@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title description">
+  <title id="title">Muxentra, propuesta de identidad</title>
+  <desc id="description">Una M de trazo fluido con tonos azul, lila y coral sobre un fondo azul oscuro.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#222A3B"/>
+      <stop offset="1" stop-color="#151A26"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="42" y1="100" x2="214" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#79D4D3"/>
+      <stop offset=".5" stop-color="#AB9CE8"/>
+      <stop offset="1" stop-color="#F7AD8A"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#background)"/>
+  <path d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"
+        fill="none" stroke="url(#flow)" stroke-width="25" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

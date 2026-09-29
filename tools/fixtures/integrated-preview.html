@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Muxentra · prueba de integración</title>
+  <style>
+    :root {
+      --vscode-editor-background: #1b1b1e;
+      --vscode-editor-foreground: #e9e9ed;
+      --vscode-foreground: #e9e9ed;
+      --vscode-descriptionForeground: #a4a4ae;
+      --vscode-font-family: 'Segoe UI', sans-serif;
+      --vscode-font-size: 13px;
+      --vscode-editorGroupHeader-tabsBackground: #202023;
+      --vscode-tab-inactiveBackground: #202023;
+      --vscode-tab-inactiveForeground: #b7b7c0;
+      --vscode-tab-activeBackground: #1b1b1e;
+      --vscode-tab-activeForeground: #fff;
+    }
+  </style>
+  <link rel="stylesheet" href="../../dist/webview.css">
+  <link rel="stylesheet" href="./preview-theme.css">
+  <script>
+    const preview = new URLSearchParams(location.search);
+    const gitSnapshot = {
+      repository: { root: 'C:/proyecto', label: 'proyecto', branch: 'main', detached: false },
+      repositories: [{ root: 'C:/proyecto', label: 'proyecto', branch: 'main', detached: false }],
+      selectedRef: '',
+      branches: ['main', 'feature/workspace', 'origin/main'].map((name, i) => ({ name, fullRef: `refs/heads/${name}`, hash: 'a'.repeat(40), current: i === 0, remote: i === 2 })),
+      worktrees: [{ path: 'C:/proyecto', hash: 'a'.repeat(40), branch: 'main' }],
+      changes: [{ path: 'src/webview/styles.css', status: ' M', staged: false, untracked: false }],
+      commits: Array.from({ length: 24 }, (_, i) => ({
+        hash: String(i + 1).padStart(40, '0'), shortHash: '9ac0' + String(i + 1).padStart(3, '0'),
+        parents: i < 23 ? [String(i + 2).padStart(40, '0')] : [],
+        subject: ['feat: bring the workspace into focus', 'style: refine the terminal experience', 'fix: restore sessions after reconnect', 'feat: add branch filters to Git', 'chore: update workspace documentation'][i % 5],
+        author: ['Mauricio Triana', 'Alex Rivera', 'Daniela Ruiz'][i % 3], email: 'demo@example.com',
+        date: new Date(Date.now() - i * 3600000).toISOString(), refs: i === 0 ? ['HEAD -> main'] : i === 4 ? ['feature/workspace'] : [],
+      })), gitlabAvatarsAvailable: false,
+    };
+    const settings = {
+      fontFamily: 'Consolas, monospace', fontSize: 13, letterSpacing: 0, lineHeight: 1,
+      fontWeight: 'normal', fontWeightBold: 'bold', scrollback: 20000,
+      rebuildAwareScrollback: true, cursorBlink: true, platform: 'win32', windowsBuildNumber: 0,
+      agentStatus: true, quietSeconds: 3, attentionSound: false, notificationsEnabled: true,
+    };
+    window.acquireVsCodeApi = () => ({ postMessage(message) {
+      if (message.type === 'ready') {
+        setTimeout(() => window.postMessage({ type: 'init', layout: null, settings, alive: [], exited: [], showUsage: true, showGit: !preview.has('no-git'), focusTimer: { enabled: true, running: true, phase: 'work', workMinutes: 25, breakMinutes: 5, sound: 'subtle', remainingMs: 1500000, endsAt: Date.now() + 1500000 } }, '*'), 100);
+      }
+      if (message.type === 'git' && message.message.type === 'ready') {
+        setTimeout(() => window.postMessage({ type: 'git', message: { type: 'snapshot', snapshot: gitSnapshot } }, '*'), preview.has('slow') ? 2400 : 180);
+      }
+      if (message.type === 'git' && message.message.type === 'refresh') {
+        window.postMessage({ type: 'git', message: { type: 'snapshot', snapshot: gitSnapshot } }, '*');
+      }
+      if (message.type === 'git' && message.message.type === 'commit') {
+        const commit = gitSnapshot.commits.find(item => item.hash === message.message.hash);
+        window.postMessage({ type: 'git', message: { type: 'detail', detail: { ...commit, body: commit.subject + '\n\nA calmer workspace with all the context you need.', files: [{ path: 'src/webview/styles.css', status: 'M' }] } } }, '*');
+      }
+      if (message.type === 'setNotifications') {
+        settings.notificationsEnabled = message.enabled;
+        window.postMessage({ type: 'settings', settings }, '*');
+      }
+      if (message.type === 'spawn' && !preview.has('stalled')) {
+        setTimeout(() => {
+          window.postMessage({ type: 'geometry', termId: message.termId, geometry: { cols: 80, rows: 24 } }, '*');
+          window.postMessage({ type: 'data', termId: message.termId, data: '\x1b[38;2;179;160;236m  MUXENTRA\x1b[0m  /  workspace\r\n\r\n  Your ideas have room to grow.\r\n\r\n\x1b[90m  ~/projects/muxentra  \x1b[36mmain\x1b[0m\r\n  $ ' }, '*');
+          window.postMessage({ type: 'usage', showUsage: true, usage: { updatedAt: Date.now(), items: [
+            { id: 'claude', label: 'Claude', windows: [{ label: '5h', percent: .35, resetsAt: Date.now() / 1000 + 8000 }, { label: '7d', percent: .33, resetsAt: Date.now() / 1000 + 280000 }, { label: 'Fable', percent: .19 }] },
+            { id: 'codex', label: 'Codex', windows: [{ label: 'semana', percent: .09, resetsAt: Date.now() / 1000 + 360000 }] },
+          ] } }, '*');
+        }, preview.has('slow') ? 1600 : 300);
+      }
+    } });
+  </script>
+</head>
+<body class="vscode-dark">
+  <script>if (preview.has('light')) { document.body.className = 'vscode-light'; document.documentElement.className = 'light'; }</script>
+  <div id="app" aria-busy="true">
+    <div id="tabbar" inert></div>
+    <div id="content" inert></div>
+    <div id="git-view" data-style-uri="../../dist/gitView.css" hidden inert></div>
+    <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
+    <div id="focus-popover" role="dialog" aria-label="Temporizador de enfoque" hidden>
+      <div class="focus-popover-heading"><strong>Temporizador de enfoque</strong><span>Trabajo y descanso</span></div>
+      <form id="focus-form">
+        <label for="focus-work">Trabajo <span>minutos</span></label><input id="focus-work" type="number" min="1" max="180" step="1" required>
+        <label for="focus-break">Descanso <span>minutos</span></label><input id="focus-break" type="number" min="1" max="180" step="1" required>
+        <div class="focus-sound"><label for="focus-sound">Sonido al terminar</label><div class="focus-sound-controls"><select id="focus-sound"><option value="subtle">Sutil</option><option value="warm">Cálida</option><option value="long">Prolongada</option></select><button id="focus-preview" type="button">Probar</button></div></div>
+        <button id="focus-save" type="submit">Iniciar</button>
+      </form>
+      <p id="focus-hint"></p>
+      <div id="focus-actions" hidden><button id="focus-toggle" type="button">Pausar</button><button id="focus-skip" type="button">Saltar fase</button><button id="focus-stop" type="button">Desactivar</button></div>
+    </div>
+    <div id="bottom-bar" hidden inert>
+      <div id="usage" hidden></div>
+      <div id="focus" hidden><button id="focus-status" type="button"><span id="focus-phase"></span><strong id="focus-time"></strong></button><button id="focus-pause" type="button"></button></div>
+    </div>
+    <div id="boot" class="boot">
+    <div class="boot-ambient" aria-hidden="true"><i></i><i></i></div>
+    <span class="boot-corner" aria-hidden="true">MUXENTRA <span>/</span> WORKSPACE</span>
+    <div class="boot-content">
+      <div class="boot-scene" aria-hidden="true">
+        <div class="boot-orbit orbit-outer"><i></i></div>
+        <div class="boot-orbit orbit-inner"><i></i></div>
+        <span class="boot-axis axis-x"></span><span class="boot-axis axis-y"></span>
+        <div class="boot-mark"><svg class="muxentra-mark" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+    <defs><linearGradient id="boot-flow" x1="42" y1="100" x2="214" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#79d4d3"/><stop offset=".5" stop-color="#ab9ce8"/><stop offset="1" stop-color="#f7ad8a"/>
+    </linearGradient></defs>
+    <path class="mark-track" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
+    <path class="mark-flow" pathLength="1" stroke="url(#boot-flow)" d="M48 180 C56 149 64 103 76 77 C83 62 95 61 103 79 C114 105 118 139 128 139 C138 139 143 105 154 79 C162 61 174 62 181 77 C193 103 201 149 209 180"/>
+  </svg></div>
+      </div>
+      <span class="boot-kicker">ENCUENTRA TU FLOW</span>
+      <h1>Muxentra<span>.</span></h1>
+      <p class="boot-tagline">Todo conectado. Tú, en foco.</p>
+      <div class="boot-loading">
+        <div class="boot-progress" aria-hidden="true"><span id="boot-progress-fill"></span></div>
+        <p id="boot-status" role="status" aria-live="polite">Conectando tu espacio de trabajo…</p>
+        <div class="boot-steps" aria-hidden="true"><span id="boot-terminals">Terminales</span><span id="boot-git">Git</span><span id="boot-workspace">Tu espacio</span></div>
+      </div>
+      <button id="boot-skip" class="boot-skip" type="button" hidden>Entrar al espacio <span aria-hidden="true">↗</span></button>
+    </div>
+    <span class="boot-signature" aria-hidden="true">UN ESPACIO. TODAS TUS IDEAS.</span>
+  </div>
+  </div>
+  <script src="../../dist/webview.js"></script>
+  <script>
+    window.addEventListener('load', () => {
+      if (location.hash === '#git') setTimeout(() => document.querySelector('.git-tab')?.click(), 1200);
+      if (location.hash === '#git-action') setTimeout(() => document.querySelector('.tab-git-action')?.click(), 1200);
+    });
+  </script>
+</body>
+</html>

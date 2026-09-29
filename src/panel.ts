@@ -4,6 +4,9 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { advanceFocusTimer, changeFocusTimer, completedFocusPhase, restoreFocusTimer, type FocusTimerState } from './focusTimer';
 import { normalizeCwd, readGitInfo } from './git';
+import { GitExplorer } from './gitExplorer';
+import { GitController } from './gitPanel';
+import { bootScreen } from './brand';
 import { log } from './log';
 import type {
   HostMessage,
@@ -27,9 +30,10 @@ export class MuxentraPanel {
   static readonly legacyViewType = 'orcaTerminals';
   private static current: MuxentraPanel | undefined;
 
-  static createOrShow(ctx: vscode.ExtensionContext, ptys: PtyClient): void {
+  static createOrShow(ctx: vscode.ExtensionContext, ptys: PtyClient, git: GitExplorer, openGit = false): void {
     if (MuxentraPanel.current) {
       MuxentraPanel.current.panel.reveal(undefined, false);
+      if (openGit) MuxentraPanel.current.openGit();
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -39,17 +43,17 @@ export class MuxentraPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(ctx.extensionUri, 'dist')],
+        localResourceRoots: [vscode.Uri.joinPath(ctx.extensionUri, 'dist'), vscode.Uri.joinPath(ctx.extensionUri, 'assets')],
       },
     );
-    MuxentraPanel.current = new MuxentraPanel(panel, ctx, ptys);
+    MuxentraPanel.current = new MuxentraPanel(panel, ctx, ptys, git, openGit);
     // El panel acaba de tomar el foco, así que su grupo es el activo.
     MuxentraPanel.current.lockGroup();
   }
 
-  static revive(panel: vscode.WebviewPanel, ctx: vscode.ExtensionContext, ptys: PtyClient): void {
+  static revive(panel: vscode.WebviewPanel, ctx: vscode.ExtensionContext, ptys: PtyClient, git: GitExplorer): void {
     MuxentraPanel.current?.panel.dispose();
-    MuxentraPanel.current = new MuxentraPanel(panel, ctx, ptys);
+    MuxentraPanel.current = new MuxentraPanel(panel, ctx, ptys, git);
     // VS Code conserva el grupo al restaurar, pero no siempre su bloqueo.
     // Si todavía no está activo, onDidChangeViewState lo bloqueará al enfocarlo.
     if (panel.active) MuxentraPanel.current.lockGroup();
@@ -61,6 +65,10 @@ export class MuxentraPanel {
     MuxentraPanel.current.panel.reveal(undefined, false);
     MuxentraPanel.current.post({ type: 'command', command, arg });
     return true;
+  }
+
+  static isOpen(): boolean {
+    return MuxentraPanel.current !== undefined;
   }
 
   /** Cuántas terminales están esperando al usuario ahora mismo. */
@@ -95,13 +103,20 @@ export class MuxentraPanel {
   /** Terminales que terminaron o piden atención, en el orden en que avisaron. */
   private readonly activity = new Map<string, { state: PaneActivity; label: string }>();
   private readonly statusItem: vscode.StatusBarItem;
+  private readonly gitController: GitController;
   private locked = false;
+  private webviewReady = false;
+  private pendingOpenGit: boolean;
+  private gitActive = false;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly ctx: vscode.ExtensionContext,
     private readonly ptys: PtyClient,
+    git: GitExplorer,
+    openGit = false,
   ) {
+    this.pendingOpenGit = openGit;
     this.focusTimer = restoreFocusTimer(ctx.globalState.get(FOCUS_TIMER_KEY), Date.now());
     panel.title = 'Muxentra';
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'assets', 'muxentra-icon.png');
@@ -111,9 +126,10 @@ export class MuxentraPanel {
     this.disposables.push(this.statusItem);
     panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(ctx.extensionUri, 'dist')],
+      localResourceRoots: [vscode.Uri.joinPath(ctx.extensionUri, 'dist'), vscode.Uri.joinPath(ctx.extensionUri, 'assets')],
     };
     panel.webview.html = this.html();
+    this.gitController = new GitController(ctx, git, message => this.post({ type: 'git', message }), () => panel.visible && this.gitActive);
 
     panel.webview.onDidReceiveMessage((m: WebviewMessage) => void this.onMessage(m), undefined, this.disposables);
     panel.onDidChangeViewState(
@@ -123,6 +139,7 @@ export class MuxentraPanel {
         this.post({ type: 'command', command: 'refit' });
         this.sendUsage();
         this.refreshBranches(true);
+        if (this.gitActive) void this.gitController.refresh();
       },
       undefined,
       this.disposables,
@@ -403,6 +420,12 @@ export class MuxentraPanel {
 
   private async onMessage(m: WebviewMessage): Promise<void> {
     switch (m.type) {
+      case 'git':
+        await this.gitController.onMessage(m.message);
+        break;
+      case 'gitVisibility':
+        this.gitActive = m.visible;
+        break;
       case 'ready': {
         const layout = this.ctx.workspaceState.get<WorkspaceLayout>(LAYOUT_KEY) ?? null;
         try {
@@ -426,8 +449,14 @@ export class MuxentraPanel {
           alive,
           exited: this.ptys.takeExited(),
           showUsage: usageEnabled(),
+          showGit: vscode.workspace.getConfiguration('muxentra').get<boolean>('openGitOnOpen', true) || this.pendingOpenGit,
           focusTimer: this.focusTimer,
         });
+        this.webviewReady = true;
+        if (this.pendingOpenGit) {
+          this.post({ type: 'command', command: 'openGit' });
+          this.pendingOpenGit = false;
+        }
         this.sendUsage();
         break;
       }
@@ -549,6 +578,11 @@ export class MuxentraPanel {
     void this.panel.webview.postMessage(message);
   }
 
+  private openGit(): void {
+    if (this.webviewReady) this.post({ type: 'command', command: 'openGit' });
+    else this.pendingOpenGit = true;
+  }
+
   private dispose(): void {
     log().info(`panel cerrado; ${this.ptys.aliveIds().length} terminales siguen vivas`);
     MuxentraPanel.current = undefined;
@@ -561,6 +595,7 @@ export class MuxentraPanel {
     if (this.focusTick) clearInterval(this.focusTick);
     this.focusTick = undefined;
     this.ptys.detach();
+    this.gitController.dispose();
     this.pending.clear();
     for (const d of this.disposables.splice(0)) d.dispose();
   }
@@ -570,13 +605,14 @@ export class MuxentraPanel {
     const dist = vscode.Uri.joinPath(this.ctx.extensionUri, 'dist');
     const script = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.js'));
     const style = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.css'));
+    const gitStyle = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'gitView.css'));
     const nonce = createNonce();
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,
-      `img-src ${webview.cspSource} data:`,
+      `img-src ${webview.cspSource} data: https://www.gravatar.com https://gravatar.com https://secure.gravatar.com https://github.com https://avatars.githubusercontent.com https://gitlab.com`,
     ].join('; ');
     return `<!DOCTYPE html>
 <html lang="es">
@@ -588,9 +624,10 @@ export class MuxentraPanel {
   <title>Muxentra</title>
 </head>
 <body>
-  <div id="app">
-    <div id="tabbar"></div>
-    <div id="content"></div>
+  <div id="app" aria-busy="true">
+    <div id="tabbar" inert></div>
+    <div id="content" inert></div>
+    <div id="git-view" data-style-uri="${gitStyle}" hidden inert></div>
     <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
     <div id="focus-popover" role="dialog" aria-label="Temporizador de enfoque" hidden>
       <div class="focus-popover-heading"><strong>Temporizador de enfoque</strong><span>Trabajo y descanso</span></div>
@@ -619,13 +656,14 @@ export class MuxentraPanel {
         <button id="focus-stop" type="button">Desactivar</button>
       </div>
     </div>
-    <div id="bottom-bar" hidden>
+    <div id="bottom-bar" hidden inert>
       <div id="usage" hidden></div>
       <div id="focus" hidden>
         <button id="focus-status" type="button" aria-label="Ver temporizador de enfoque" aria-controls="focus-popover" aria-expanded="false"><span id="focus-phase"></span><strong id="focus-time"></strong></button>
         <button id="focus-pause" type="button" aria-label="Pausar temporizador"></button>
       </div>
     </div>
+    ${bootScreen()}
   </div>
   <script nonce="${nonce}" src="${script}"></script>
 </body>

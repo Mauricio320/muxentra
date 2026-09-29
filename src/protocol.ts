@@ -1,5 +1,6 @@
 // Tipos compartidos entre el extension host y el webview.
 import type { FocusAction, FocusPhase, FocusSound, FocusTimerState } from './focusTimer';
+import type { GitHostMessage, GitViewMessage } from './gitPanel';
 
 export type SplitDir = 'row' | 'col';
 
@@ -129,6 +130,7 @@ export interface UsageSnapshot {
 export type PaneActivity = 'idle' | 'busy' | 'done' | 'attention';
 
 export type MuxentraCommand =
+  | 'openGit'
   | 'newTab'
   | 'closeTab'
   | 'renameTab'
@@ -151,6 +153,8 @@ export type MuxentraCommand =
 /** Mensajes que envía el webview al extension host. */
 export type WebviewMessage =
   | { type: 'ready' }
+  | { type: 'git'; message: GitViewMessage }
+  | { type: 'gitVisibility'; visible: boolean }
   | { type: 'spawn'; termId: string; cols: number; rows: number }
   | { type: 'attach'; termId: string; cols: number; rows: number }
   | { type: 'input'; termId: string; data: string }
@@ -182,6 +186,7 @@ export type HostMessage =
       /** Terminales cuyo proceso terminó mientras el panel estaba cerrado. */
       exited: string[];
       showUsage: boolean;
+      showGit: boolean;
       focusTimer: FocusTimerState;
     }
   | { type: 'data'; termId: string; data: string }
@@ -196,4 +201,5 @@ export type HostMessage =
   | { type: 'focusTimer'; timer: FocusTimerState; now: number; completedPhase?: FocusPhase }
   /** Rama de la terminal; branch null cuando el directorio no está en un repositorio. */
   | { type: 'branch'; termId: string; branch: string | null; detached: boolean; cwd: string | null }
-  | { type: 'command'; command: MuxentraCommand; arg?: string };
+  | { type: 'command'; command: MuxentraCommand; arg?: string }
+  | { type: 'git'; message: GitHostMessage };

@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { preferredUsageReset, formatReset } from '../src/webview/usageReset.ts';
+
+const now = 1_800_000_000;
+const session = { label: '5h', percent: .35, resetsAt: now + 7200 };
+const week = { label: '7d', percent: .33, resetsAt: now + 3 * 86400 };
+assert.equal(preferredUsageReset([week, session], now), session);
+assert.equal(preferredUsageReset([week], now), week);
+assert.equal(preferredUsageReset([{ label: '5h', percent: .35 }, week], now), week);
+assert.equal(preferredUsageReset([{ ...session, stale: true }, week], now), week);
+assert.equal(preferredUsageReset([{ ...session, resetsAt: now }, week], now), week);
+assert.equal(preferredUsageReset([{ ...session, resetsAt: NaN }, week], now), week);
+assert.equal(preferredUsageReset([{ ...session, resetsAt: Infinity }, week], now), week);
+assert.equal(preferredUsageReset([{ ...week, label: 'semana' }], now)?.label, 'semana');
+assert.equal(preferredUsageReset([{ ...week, label: 'Fable' }], now), undefined);
+assert.equal(preferredUsageReset([{ ...session, stale: true }, { ...week, stale: true }], now), undefined);
+assert.equal(preferredUsageReset([], now), undefined);
+assert.equal(preferredUsageReset([session, week], session.resetsAt), week);
+assert.equal(preferredUsageReset([session, week], week.resetsAt), undefined);
+assert.equal(formatReset(now + 2 * 3600 + 13 * 60, now), '2h 13m');
+assert.equal(formatReset(now + 3 * 86400 + 22 * 3600, now), '3d 22h');
+assert.equal(formatReset(now + 25, now), '<1m');
+assert.equal(formatReset(undefined, now), undefined);
+assert.equal(formatReset(NaN, now), undefined);
+assert.equal(formatReset(Infinity, now), undefined);
+console.log('PASS: 5h priority, weekly fallback, stale/missing/expired timestamps and compact durations');

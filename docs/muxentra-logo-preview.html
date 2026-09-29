@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Propuesta de logo · Muxentra</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 40px; background: #10131b; color: #eceef6; font: 15px/1.45 "Segoe UI", sans-serif; }
+    main { width: min(100%, 900px); margin: auto; }
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -.035em; }
+    p { margin: 0; color: #aeb4c4; }
+    .comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 30px 0; }
+    .card { min-height: 294px; padding: 24px; border: 1px solid #303644; border-radius: 18px; background: #1a1e29; }
+    .card h2 { margin: 0 0 18px; font-size: 12px; font-weight: 650; letter-spacing: .13em; color: #9da6bb; text-transform: uppercase; }
+    .large { display: block; width: 174px; height: 174px; object-fit: contain; margin: 0 auto 16px; }
+    .card p { text-align: center; font-size: 13px; }
+    .sizes { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border: 1px solid #303644; border-radius: 14px; background: #1a1e29; }
+    .sizes strong { margin-right: auto; font-size: 13px; font-weight: 600; }
+    .sizes figure { display: flex; align-items: center; gap: 8px; margin: 0; color: #9da6bb; font-size: 11px; }
+    .sizes img { display: block; width: var(--size); height: var(--size); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Una M que conecta</h1>
+    <p>Un gesto continuo y orgánico para representar varias terminales trabajando juntas.</p>
+    <div class="comparison">
+      <section class="card">
+        <h2>Logo anterior</h2>
+        <img class="large" src="muxentra-icon-previous.png" alt="Logo anterior de Muxentra">
+        <p>Cuatro ventanas y muchos detalles pequeños.</p>
+      </section>
+      <section class="card">
+        <h2>Nuevo logo</h2>
+        <img class="large" src="muxentra-logo-concept.svg" alt="Nueva M fluida de Muxentra">
+        <p>Una sola forma, suave y reconocible a cualquier tamaño.</p>
+      </section>
+    </div>
+    <div class="sizes">
+      <strong>En la interfaz de VS Code</strong>
+      <figure><img src="muxentra-logo-concept.svg" style="--size: 48px" alt=""><figcaption>48 px</figcaption></figure>
+      <figure><img src="muxentra-logo-concept.svg" style="--size: 24px" alt=""><figcaption>24 px</figcaption></figure>
+      <figure><img src="muxentra-logo-concept.svg" style="--size: 16px" alt=""><figcaption>16 px</figcaption></figure>
+    </div>
+  </main>
+</body>
+</html>

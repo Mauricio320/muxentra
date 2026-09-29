@@ -1,0 +1,31 @@
+/* Representative VS Code theme tokens, scoped to the local preview. */
+:root {
+  --vscode-input-background: #24242d;
+  --vscode-input-foreground: #e9e9ed;
+  --vscode-input-border: #3c3b48;
+  --vscode-widget-border: #3c3b48;
+  --vscode-editorWidget-background: #22222b;
+  --vscode-button-background: #8971bf;
+  --vscode-button-foreground: #fff;
+  --vscode-button-secondaryBackground: #35333f;
+  --vscode-focusBorder: #b3a0ec;
+  --vscode-dropdown-background: #24242d;
+  --vscode-dropdown-foreground: #e9e9ed;
+}
+:root.light {
+  --vscode-editor-background: #f8f8fb;
+  --vscode-editor-foreground: #262332;
+  --vscode-foreground: #262332;
+  --vscode-descriptionForeground: #656171;
+  --vscode-input-background: #fff;
+  --vscode-input-foreground: #262332;
+  --vscode-input-border: #dcd9e3;
+  --vscode-widget-border: #dcd9e3;
+  --vscode-editorWidget-background: #fff;
+  --vscode-button-background: #7253b2;
+  --vscode-button-secondaryBackground: #e9e5f1;
+  --vscode-button-secondaryForeground: #262332;
+  --vscode-focusBorder: #7253b2;
+  --vscode-dropdown-background: #fff;
+  --vscode-dropdown-foreground: #262332;
+}

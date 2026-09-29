@@ -5,7 +5,7 @@
 <h1 align="center">Muxentra</h1>
 
 <p align="center">
-  A VS Code extension that puts tabs, nested terminal splits and AI assistant usage in a single workspace.
+  A VS Code extension that puts Git history, nested terminal splits and AI assistant usage in a single workspace.
 </p>
 
 ![Two Muxentra tabs inside VS Code: Claude Code on the left and, on the right, Codex and a second Claude Code in splits, with the usage bar for both agents at the bottom](docs/panel.png)
@@ -75,11 +75,12 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, `code --list-extensions --show-versions` should show `mauriciotriana.muxentra@0.8.0`; to remove it, `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.10.3 build appears as `mauriciotriana.muxentra@0.10.3`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
-1. `Ctrl+Alt+T` opens the panel. It takes its own editor group on the right, with one terminal ready.
+1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right. The icon-only Git tab comes first; a terminal tab is selected when the panel opens. Click the Git branch icon in the first tab, use the Git button beside the timer and bell, or use the next/previous tab shortcuts to open it. The toolbar button is disabled while Git is selected.
+   On startup or restoration, the opening animation draws the fluid M among light orbits, with ambient color and live readiness indicators for terminals and Git. It remains visible for at least four seconds and waits longer if the active tab's terminals or the Git view are still loading, then fades into the workspace. If Git is disabled in settings, it waits only for the terminals and the four-second minimum. After ten seconds, "Entrar al espacio" lets you use the panel while loading continues. Reduced motion disables the drawing, orbit and entrance animations while retaining the minimum display time.
 2. Split it: `Ctrl+\` to the right, `Ctrl+Shift+\` downwards. Drag the dividers to share out the space, or run "Muxentra: Igualar tamaño de terminales" from the command palette.
 3. `Ctrl+Shift+T` opens another tab. `F2` renames it, right-click colours it, and `Shift+F2` renames the focused terminal.
 4. Drag a terminal by its header to rearrange it: drop it in the middle of another one and they swap, drop it near an edge and it moves to that side.
@@ -89,16 +90,31 @@ With several agents running at once you do not have to watch them: each terminal
 
 > Heads up: the extension's own interface (command titles, setting descriptions, notifications) is in Spanish.
 
+### A workspace in focus
+
+The interface uses restrained lavender and blue accents, soft borders and rounded terminal surfaces that follow your VS Code theme. Tabs scroll independently from the always-visible add, Git, focus and notification controls. Git shares the same visual identity, with a repository overview, framed navigation and compact 34px commit rows. Short transitions give feedback when opening controls or changing views; terminal output stays still while you work. Keyboard focus and reduced motion are supported throughout.
+
+![Muxentra opening sequence with the fluid M, light orbits and loading indicators](docs/premium-opening.png)
+
+### Git inside Muxentra
+
+The Git tab shows the workspace's repositories, commit graph, branches, local changes and worktrees. The compact history uses colored branch lanes, markers for merges, tags and HEAD, author portraits and relative dates; hover a date for its exact value, or select a commit for its details. Click a changed file to open VS Code's diff editor. Author portraits use public GitHub or Gravatar images when available; unmatched authors show initials. For GitLab repositories, click "Fotos" and confirm the lookup to search for portraits. This sends commit author names and emails to GitLab and remembers your choice for that repository. Private or unmatched profiles keep initials.
+
+![Local design preview of the Git workspace with sample commits](docs/premium-git.png)
+
+Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, while terminal processes stay alive for reconnection. Opening Git uses a brief fade and shift, which is disabled when reduced motion is requested. `muxentra.openGitOnOpen` shows the Git tab by default. If you turn it off, use the Git button or run "Muxentra: Abrir Git" from the command palette to show it. After upgrading from an older version with a separate "Muxentra Git" editor tab, reload the VS Code window to restore the unified panel.
+
 ## What it does
 
 - A "Muxentra" panel in the editor area with its own tab bar.
+- A Git tab inside the Muxentra panel with a commit graph, branch and repository filters, local changes, worktrees, commit details and file diffs. It reads Git from the workspace and refreshes while the Git tab is visible; Git Graph and GitLens are not required.
 - Each tab holds a tree of splits: any terminal can be split to the right or downwards, nested as deep as you want.
 - Draggable dividers between terminals, and a command to even out their sizes.
 - Drag a terminal by its header: dropping it in the middle of another one swaps them; dropping it near an edge (left, right, top, bottom) moves it to that side. Escape cancels the drag.
 - Every terminal can be renamed (double-click its name or press `Shift+F2`). A hand-written name wins over the title the shell reports and travels with the terminal when you move it. Clearing it restores the automatic title.
 - Every tab can be given a colour (right-click the tab) so you can find it at a glance.
 - Every terminal shows what it is up to: a pulsing blue dot while it works, a green "listo" label when it finishes, an orange "atención" one when the program is asking for something. The dot is repeated on the tab, the number of waiting terminals appears in the panel title and in the VS Code status bar, and a notification offers to take you there. Built for having four agents running and knowing which one needs you.
-- A bottom bar with Claude Code and OpenAI Codex usage: the percentage of each limit window and how long until it resets. Click to refresh.
+- A compact bottom bar with Claude Code and OpenAI Codex usage: each provider card keeps all limit percentages and shows a reset countdown beside the matching percentage, on the same line. It prioritizes the current five-hour reset, falling back to the weekly reset when no current five-hour timestamp is available. Missing, expired or stale schedules show a dash with a "Reinicio pendiente" tooltip. Countdowns update every 30 seconds without polling providers or moving keyboard focus. Hover the countdown for the exact reset date and time, click a card for details, or use the refresh button to update usage.
 - A work/break timer: click the clock beside the tab bar, choose the minutes (20/5 by default) and start. The active countdown appears beside usage at the bottom, with pause/resume; click it to change durations, choose and preview one of three chimes (about 0.6, 1.1 or 1.8 seconds), skip a phase or turn it off. The selected sound is saved. Work and break alternate automatically; the chime plays at phase changes while the panel is visible, and the timer keeps time across panel and window reloads.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
 - `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS) pastes images: the clipboard image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent.
@@ -115,7 +131,7 @@ With several agents running at once you do not have to watch them: each terminal
 | --- | --- | --- |
 | Open the panel (global) | `Ctrl+Alt+T` | `Cmd+Alt+T` |
 | New tab | `Ctrl+Shift+T` | `Cmd+T` |
-| Next / previous tab | `Ctrl+Shift+]` / `Ctrl+Shift+[` | `Cmd+Shift+]` / `Cmd+Shift+[` |
+| Next / previous tab (including Git) | `Ctrl+Shift+]` / `Ctrl+Shift+[` | `Cmd+Shift+]` / `Cmd+Shift+[` |
 | Rename tab | `F2` or double-click | `F2` or double-click |
 | Rename terminal | `Shift+F2` or double-click its name | `Shift+F2` or double-click |
 | Tab colour | right-click the tab | right-click the tab |
@@ -128,7 +144,7 @@ With several agents running at once you do not have to watch them: each terminal
 
 "Muxentra: Igualar tamaño de terminales" and "Muxentra: Ir a la terminal que espera" live in the command palette with no default shortcut. Every shortcut can be changed in Keyboard Shortcuts (VS Code adapts them to your keyboard layout).
 
-Closing the last terminal of a tab closes the tab. Middle-clicking a tab closes it.
+Closing the last terminal of a terminal tab closes that tab. Middle-clicking a terminal tab closes it; the fixed Git tab closes with the Muxentra panel.
 
 ## Pasting an image into the terminal
 
@@ -173,6 +189,7 @@ Worth knowing:
 - `muxentra.quietSeconds`: seconds of silence after which a busy terminal counts as finished. Defaults to 3.
 - `muxentra.showBranch`: show or hide the git branch on each terminal.
 - `muxentra.lockEditorGroup`: lock the editor group when the panel opens.
+- `muxentra.openGitOnOpen`: show Git as the first tab inside Muxentra. On by default; the Git toolbar button or "Muxentra: Abrir Git" can show it later when this setting is off.
 - `muxentra.usageRefreshSeconds`: how often usage is re-read while the panel is visible.
 - `muxentra.imagePasteDir`: folder for pasted images. Defaults to `.muxentra-img`. It has to stay inside the workspace.
 - `muxentra.imagePasteMax`: how many pasted images are kept. Defaults to 6.
@@ -234,7 +251,10 @@ npm run build        # builds extension and webview into dist/
 npm run watch        # rebuilds on save
 npm run typecheck    # tsc --noEmit
 npm run test:terminal # scrollback, replay and resize against a real pty
+npm run test:git    # repositories, branches, commits, diffs and worktrees
+npm run test:gitlab # GitLab author portraits and matching
 npm run test:usage   # quota sources, precedence and the statusLine bridge
+npm run test:usage-reset # five-hour reset priority, weekly fallback and unavailable schedules
 npm run test:focus   # work/break timer transitions and persistence
 npm run package      # produces the .vsix
 ```
@@ -251,7 +271,7 @@ and attach the debugger to port 9333. The extension's diagnostics go to the Outp
 
 ```
 npm run package
-gh release create v0.3.0 muxentra-0.3.0.vsix --title v0.3.0 --notes "What changed"
+gh release create v0.9.9 muxentra-0.9.9.vsix --title v0.9.9 --notes "What changed"
 ```
 
 The `install.ps1` at the root always points at the most recent release, so uploading the new `.vsix` and telling people is enough. Bump `version` in `package.json` first: the installer uses `--force` and reinstalls anyway, but without a new number nobody knows which build they have.
@@ -273,6 +293,7 @@ The installer checks the SHA256 that GitHub publishes for each asset and refuses
 
 - Backend: `node-pty` 1.1.0 (Node-API, ships prebuilt binaries for Windows and macOS, compiles on install on Linux).
 - Frontend: `@xterm/xterm` 6 inside a webview with `retainContextWhenHidden`.
+- Git renders in the same webview as the terminals, with its CSS isolated in a ShadowRoot. Git operations and optional GitLab portrait lookups run in the extension host.
 - Terminal server: `dist/server.js`, launched by the extension with VS Code's own executable in Node mode (`ELECTRON_RUN_AS_NODE`), detached. It listens on a per-user named pipe (Windows) or unix socket. A headless xterm keeps the terminal state and the configured scrollback (20000 lines by default, up to 100000). Reconnect restores a serialized snapshot at its original dimensions, then fits visible panes. Hidden panes keep their existing dimensions. Snapshot, output and resize share one ordered queue. It shuts itself down after 5 minutes with no terminals and no clients. Its log lives in `<globalStorage>/server.log` and rotates at 512 KB.
 
 When upgrading from a server without state replay, Muxentra keeps existing sessions alive and displays a notice. Finish and close those terminals before restarting the old server; reloading the extension alone does not replace that process. Already discarded history cannot be recovered from the previous 1 MB buffer.

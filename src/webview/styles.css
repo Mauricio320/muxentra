@@ -1,3 +1,28 @@
+@import './boot.css';
+
+body {
+  --mx-base: var(--vscode-editor-background, #171820);
+  --mx-text: var(--vscode-editor-foreground, #e9eaf2);
+  --mx-muted: var(--vscode-descriptionForeground, #a4a7b8);
+  --mx-accent: #b3a0ec;
+  --mx-blue: #88b9ec;
+  --mx-line: color-mix(in srgb, var(--mx-text) 10%, transparent);
+  --mx-surface: color-mix(in srgb, var(--mx-base) 96%, var(--mx-accent));
+  --mx-raised: color-mix(in srgb, var(--mx-base) 92%, var(--mx-text));
+  --mx-hover: color-mix(in srgb, var(--mx-accent) 11%, var(--mx-base));
+  --mx-ease: cubic-bezier(.2,.7,.2,1);
+}
+body.vscode-light {
+  color-scheme: light;
+  --mx-accent: #7253b2;
+  --mx-blue: #3b6fa7;
+  --mx-muted: var(--vscode-descriptionForeground, #606374);
+}
+body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
+.muxentra-mark { display: block; width: 28px; height: 28px; fill: none; }
+.muxentra-mark path { stroke-width: 25px; stroke-linecap: round; stroke-linejoin: round; }
+.mark-track { stroke: color-mix(in srgb, var(--mx-accent) 12%, transparent); }
+
 html,
 body,
 #app {
@@ -8,10 +33,10 @@ body,
 }
 
 body {
-  background: var(--vscode-editor-background);
+  background: var(--mx-base);
   color: var(--vscode-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
+  font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+  font-size: var(--vscode-font-size, 13px);
   color-scheme: light dark;
 }
 
@@ -25,27 +50,28 @@ body {
 
 #tabbar {
   display: flex;
-  align-items: end;
-  gap: 2px;
-  height: 36px;
-  padding: 3px 5px 0;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 7px 10px;
   box-sizing: border-box;
   flex: 0 0 auto;
-  overflow-x: auto;
-  overflow-y: hidden;
-  background: var(--vscode-editorGroupHeader-tabsBackground);
-  border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder, transparent);
-  scrollbar-width: none;
+  min-width: 0;
+  background: var(--mx-surface);
+  border-bottom: 1px solid var(--mx-line);
 }
-
-#tabbar::-webkit-scrollbar {
-  display: none;
-}
-
+.workspace-brand { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border: 1px solid var(--mx-line); border-radius: 9px; background: var(--mx-raised); }
+.workspace-tabs { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.workspace-tabs::-webkit-scrollbar { display: none; }
+.workspace-actions { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; padding-left: 9px; border-left: 1px solid var(--mx-line); }
+.workspace-actions .icon-btn { width: 28px; height: 28px; margin: 0; border-radius: 7px; color: var(--mx-muted); }
+.workspace-actions .tab-add { background: var(--mx-raised); color: var(--mx-text); }
+.workspace-actions .tab-focus.active { color: var(--mx-accent); background: var(--mx-hover); }
 .tab {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex: 0 0 auto;
+  gap: 7px;
   height: 32px;
   padding: 0 7px 0 11px;
   min-width: 108px;
@@ -54,25 +80,20 @@ body {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  background: var(--vscode-tab-inactiveBackground);
-  color: var(--vscode-tab-inactiveForeground);
+  background: transparent;
+  color: var(--mx-muted);
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
-  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+  border-radius: 8px;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
-
-.tab:hover {
-  background: var(--vscode-tab-hoverBackground, var(--vscode-tab-inactiveBackground));
-  color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
-}
-
+.tab:hover { background: var(--mx-raised); color: var(--mx-text); }
 .tab.active {
-  background: var(--vscode-tab-activeBackground);
-  color: var(--vscode-tab-activeForeground);
-  border-color: var(--vscode-tab-border, var(--vscode-editorGroupHeader-tabsBorder, transparent));
-  border-top-color: var(--vscode-tab-activeBorderTop, var(--vscode-focusBorder));
+  background: var(--mx-hover);
+  color: var(--mx-text);
+  border-color: color-mix(in srgb, var(--mx-accent) 28%, var(--mx-line));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--mx-text) 5%, transparent), 0 2px 6px #0001;
 }
+.tab:focus-visible { outline: 2px solid var(--mx-accent); outline-offset: -2px; }
 
 .tab-name {
   flex: 1 1 auto;
@@ -81,10 +102,37 @@ body {
   font-size: 12px;
 }
 
+.tab.git-tab {
+  flex: 0 0 34px;
+  min-width: 34px;
+  max-width: 34px;
+  justify-content: center;
+  padding: 0;
+  color: var(--mx-muted);
+  font: inherit;
+}
+
+.git-tab svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--mx-accent);
+}
+
+.git-tab:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
 /* ---------- color de pestaña ---------- */
 
 .tab.has-color {
-  border-top-color: var(--tab-color);
+  border-color: color-mix(in srgb, var(--tab-color) 35%, transparent);
 }
 
 .tab.has-color.active {
@@ -179,12 +227,14 @@ body {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease;
+  transition: color 180ms ease, background 180ms ease, transform 180ms var(--mx-ease);
 }
 
 .icon-btn:hover {
-  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.25));
+  background: var(--mx-hover);
+  color: var(--mx-text);
 }
+.icon-btn:active:not(:disabled) { transform: scale(.94); }
 
 .icon-btn:focus-visible,
 .usage-refresh:focus-visible,
@@ -215,14 +265,31 @@ body {
   align-self: center;
   margin: 0 6px;
   flex: 0 0 auto;
-  color: var(--vscode-tab-inactiveForeground);
+  color: var(--mx-muted);
+}
+
+.tab-git-action {
+  align-self: center;
+  margin: 0 3px 0 2px;
+  flex: 0 0 auto;
+  color: var(--mx-accent);
+}
+
+.tab-git-action:disabled {
+  color: var(--mx-muted);
+  cursor: default;
+  opacity: 0.38;
+}
+
+.tab-git-action:disabled:hover {
+  background: transparent;
 }
 
 .tab-notifications {
   align-self: center;
   margin: 0 4px 0 0;
   flex: 0 0 auto;
-  color: var(--vscode-tab-inactiveForeground);
+  color: var(--mx-muted);
 }
 
 .tab-notifications[aria-pressed="false"] {
@@ -232,7 +299,7 @@ body {
 .tab-focus {
   align-self: center;
   flex: 0 0 auto;
-  color: var(--vscode-tab-inactiveForeground);
+  color: var(--mx-muted);
 }
 
 .tab-focus.active {
@@ -245,6 +312,27 @@ body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  margin: 8px 10px;
+}
+
+#content[hidden],
+#git-view[hidden] {
+  display: none;
+}
+
+#git-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#git-view.git-entering {
+  animation: git-enter 220ms ease-out both;
+}
+
+@keyframes git-enter {
+  from { opacity: 0.7; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .tab-content {
@@ -278,8 +366,8 @@ body {
 }
 
 .divider {
-  flex: 0 0 4px;
-  background: var(--vscode-editorGroup-border, rgba(128, 128, 128, 0.24));
+  flex: 0 0 6px;
+  background: var(--mx-surface);
   cursor: col-resize;
   transition: background 120ms;
 }
@@ -310,6 +398,9 @@ body.dragging {
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--mx-line);
+  border-radius: 9px;
   background: var(--vscode-terminal-background, var(--vscode-panel-background, var(--vscode-editor-background)));
 }
 
@@ -317,17 +408,14 @@ body.dragging {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 5px 0 9px;
+  height: 34px;
+  padding: 0 8px 0 12px;
   flex: 0 0 auto;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  background: linear-gradient(
-    180deg,
-    var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.12)),
-    var(--vscode-terminal-background, var(--vscode-editor-background))
-  );
-  border-bottom: 1px solid var(--vscode-widget-border, transparent);
+  background: var(--mx-surface);
+  border-bottom: 1px solid var(--mx-line);
+  transition: background 200ms, box-shadow 200ms, color 200ms;
   user-select: none;
   cursor: grab;
   touch-action: none;
@@ -504,9 +592,9 @@ body.pane-dragging * {
 #bottom-bar {
   display: flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 38px;
   flex: 0 0 auto;
-  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
+  background: var(--mx-surface);
   border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
 }
 
@@ -595,7 +683,7 @@ body.pane-dragging * {
 #focus-popover {
   position: absolute;
   z-index: 35;
-  top: 40px;
+  top: 54px;
   right: 8px;
   width: min(290px, calc(100% - 16px));
   max-height: calc(100% - 55px);
@@ -603,7 +691,7 @@ body.pane-dragging * {
   box-sizing: border-box;
   overflow-y: auto;
   border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
-  border-radius: 9px;
+  border-radius: 12px;
   color: var(--vscode-foreground);
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
@@ -611,7 +699,7 @@ body.pane-dragging * {
 
 #focus-popover.from-bottom {
   top: auto;
-  bottom: 40px;
+  bottom: 44px;
 }
 
 .focus-popover-heading {
@@ -662,11 +750,11 @@ body.pane-dragging * {
 #focus-form input,
 #focus-form select {
   width: 100%;
-  height: 27px;
+  height: 32px;
   box-sizing: border-box;
   padding: 2px 6px;
   border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
-  border-radius: 4px;
+  border-radius: 7px;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   font: inherit;
@@ -681,10 +769,10 @@ body.pane-dragging * {
 #focus-form button,
 #focus-actions button,
 #focus-preview {
-  min-height: 27px;
+  min-height: 30px;
   padding: 3px 8px;
   border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 4px;
+  border-radius: 7px;
   color: var(--vscode-button-foreground);
   background: var(--vscode-button-background);
   cursor: pointer;
@@ -699,7 +787,14 @@ body.pane-dragging * {
 
 #focus-save {
   grid-column: 1 / -1;
+  margin-top: 4px;
+  color: var(--mx-base);
+  background: var(--mx-accent);
+  font-weight: 650;
+  transition: background 180ms;
 }
+
+#focus-save:hover { background: color-mix(in srgb, var(--mx-accent) 85%, var(--mx-text)); }
 
 #focus-hint {
   margin: 9px 0 0;
@@ -735,10 +830,10 @@ body.pane-dragging * {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  min-height: 34px;
-  padding: 2px 5px;
+  min-height: 38px;
+  padding: 4px 8px;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
@@ -747,7 +842,7 @@ body.pane-dragging * {
   white-space: nowrap;
   scrollbar-width: none;
   color: var(--vscode-foreground);
-  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
+  background: var(--mx-surface);
 }
 
 #usage::-webkit-scrollbar {
@@ -759,27 +854,37 @@ body.pane-dragging * {
 }
 
 .usage-item {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 22px;
+  align-content: center;
   flex: 0 0 auto;
-  gap: 7px;
-  height: 28px;
-  padding: 0 8px 0 5px;
+  column-gap: 9px;
+  height: 30px;
+  padding: 3px 8px;
   box-sizing: border-box;
   color: var(--vscode-foreground);
-  background: color-mix(in srgb, var(--usage-brand) 6%, var(--vscode-editor-background));
-  border: 1px solid color-mix(in srgb, var(--usage-brand) 24%, var(--vscode-widget-border, transparent));
-  border-radius: 5px;
+  background: var(--mx-surface);
+  border: 1px solid var(--mx-line);
+  border-radius: 7px;
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }
 
+.usage-item.claude { --usage-brand: #e07a5f; }
+.usage-item.codex { --usage-brand: var(--mx-blue); }
+.usage-metrics { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.usage-reset { display: inline-flex; grid-column: 3; grid-row: 1; align-items: center; gap: 3px; margin-left: 1px; color: var(--mx-muted); line-height: 11px; }
+.usage-reset svg { width: 10px; height: 10px; flex: 0 0 auto; fill: none; stroke: var(--mx-accent); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.usage-reset-time { color: var(--mx-muted); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.usage-reset.pending svg, .usage-reset.pending .usage-reset-time { color: var(--mx-muted); stroke: currentColor; }
+
 .usage-item:hover,
 .usage-item[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--usage-brand) 12%, var(--vscode-editor-background));
-  border-color: color-mix(in srgb, var(--usage-brand) 56%, var(--vscode-widget-border, transparent));
+  background: var(--mx-hover);
+  border-color: color-mix(in srgb, var(--mx-accent) 40%, var(--mx-line));
 }
 
 .usage-item:focus-visible {
@@ -790,19 +895,21 @@ body.pane-dragging * {
 .usage-provider {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  padding-right: 9px;
+  border-right: 1px solid var(--mx-line);
 }
 
 .usage-provider-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 17px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
   color: var(--usage-brand);
   background: color-mix(in srgb, var(--usage-brand) 13%, transparent);
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .usage-provider-icon svg {
@@ -828,22 +935,21 @@ body.pane-dragging * {
   letter-spacing: 0.01em;
 }
 
-.usage-plan {
-  display: none;
-}
-
 .usage-win {
   display: grid;
   grid-template-columns: auto auto;
-  grid-template-rows: 12px 3px;
+  grid-template-rows: 11px 3px;
   column-gap: 5px;
   row-gap: 2px;
   align-content: center;
-  min-width: 49px;
-  height: 22px;
+  min-width: 39px;
+  height: 18px;
   padding-left: 7px;
-  border-left: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
+  border-left: 1px solid var(--mx-line);
 }
+
+.usage-win:first-child { border-left: 0; padding-left: 0; }
+.usage-win.has-reset { grid-template-columns: auto auto auto; }
 
 .usage-win-label {
   min-width: 0;
@@ -876,7 +982,7 @@ body.pane-dragging * {
 }
 
 .usage-win.ok {
-  color: var(--vscode-charts-green, #23d18b);
+  color: var(--mx-blue);
 }
 
 .usage-win.warn {
@@ -917,7 +1023,7 @@ body.pane-dragging * {
 }
 
 .usage-detail.status {
-  max-width: none;
+  max-width: 140px;
   padding: 0 5px;
   border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 32%, transparent);
   border-radius: 999px;
@@ -952,7 +1058,7 @@ body.pane-dragging * {
   border: 1px solid transparent;
   border-radius: 5px;
   color: var(--vscode-foreground);
-  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-panel-background, #17191d));
+  background: var(--mx-surface);
   font: inherit;
   cursor: pointer;
   transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
@@ -991,7 +1097,7 @@ body.pane-dragging * {
 #usage-popover {
   position: absolute;
   z-index: 30;
-  bottom: 40px;
+  bottom: 44px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1096,7 +1202,8 @@ body.pane-dragging * {
 
 .pane.active .pane-header {
   color: var(--vscode-foreground);
-  box-shadow: inset 3px 0 0 var(--vscode-focusBorder), inset 0 -1px 0 color-mix(in srgb, var(--vscode-focusBorder) 46%, transparent);
+  background: var(--mx-hover);
+  box-shadow: inset 2px 0 0 var(--mx-accent);
 }
 
 .pane-title {
@@ -1121,8 +1228,8 @@ body.pane-dragging * {
 }
 
 .pane.active .pane-title::before {
-  background: var(--vscode-focusBorder);
-  box-shadow: 0 0 7px color-mix(in srgb, var(--vscode-focusBorder) 65%, transparent);
+  background: var(--mx-accent);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--mx-accent) 40%, transparent);
   opacity: 1;
 }
 
@@ -1310,20 +1417,22 @@ body.pane-dragging * {
 
 @media (max-width: 980px) {
   .usage-item {
-    gap: 5px;
-    padding-right: 6px;
+    column-gap: 7px;
+    padding-right: 8px;
   }
 
   .usage-win {
-    min-width: 45px;
+    min-width: 37px;
     padding-left: 5px;
   }
 }
 
 @media (max-width: 520px) {
-  #tabbar {
-    height: 34px;
-  }
+  #tabbar { height: 44px; padding: 6px; gap: 6px; }
+  #content { margin: 6px; }
+  .workspace-brand { display: none; }
+  .workspace-actions { padding-left: 6px; gap: 2px; }
+  .workspace-actions .icon-btn { width: 26px; height: 28px; }
 
   .tab {
     height: 30px;
@@ -1331,11 +1440,16 @@ body.pane-dragging * {
   }
 }
 
+/* Popovers enter once when opened; terminal content stays still while typing. */
+#focus-popover:not([hidden]), #usage-popover:not([hidden]), .tab-menu {
+  animation: surface-enter 180ms var(--mx-ease) both;
+  box-shadow: 0 12px 40px #0003, 0 2px 8px #0002;
+}
+@keyframes surface-enter { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-  }
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}
+@media (forced-colors: active) {
+  .tab.active, .pane.active .pane-header { border: 1px solid Highlight; }
+  .mark-flow { stroke: CanvasText; }
 }
