@@ -54,8 +54,16 @@ export interface TerminalSnapshot extends TerminalGeometry {
 export type ResumeAgent = 'claude' | 'codex';
 
 export interface TermSettings {
+  /** Fuente efectiva: la propia de Muxentra si está puesta, si no la heredada. */
   fontFamily: string;
   fontSize: number;
+  /** Valor de muxentra.fontFamily; vacío cuando se hereda de VS Code. */
+  customFontFamily: string;
+  /** La que se usaría sin ajuste propio: terminal.integrated.fontFamily o editor.fontFamily. */
+  inheritedFontFamily: string;
+  /** Valor de muxentra.fontSize; 0 cuando se hereda. */
+  customFontSize: number;
+  inheritedFontSize: number;
   letterSpacing: number;
   lineHeight: number;
   fontWeight: TerminalFontWeight;
@@ -170,6 +178,8 @@ export type WebviewMessage =
   | { type: 'refreshUsage' }
   /** Activa o silencia los avisos de Muxentra desde la barra del panel. */
   | { type: 'setNotifications'; enabled: boolean }
+  /** Fuente elegida en el panel. Familia vacía o tamaño 0 vuelven a la de VS Code; ausente no toca ese valor. */
+  | { type: 'setFont'; fontFamily?: string; fontSize?: number }
   | { type: 'focusTimer'; action: FocusAction; workMinutes?: number; breakMinutes?: number; sound?: FocusSound }
   /** Directorio que reportó el shell (OSC 7, OSC 9;9 o el título). */
   | { type: 'cwd'; termId: string; cwd: string }

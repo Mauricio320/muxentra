@@ -517,11 +517,38 @@ export class MuxentraPanel {
       case 'setNotifications':
         await this.setNotifications(m.enabled);
         break;
+      case 'setFont':
+        await this.setFont(m.fontFamily, m.fontSize);
+        break;
       case 'focusTimer':
         this.focusTimer = changeFocusTimer(this.focusTimer, m.action, Date.now(), m.workMinutes, m.breakMinutes, m.sound);
         await this.ctx.globalState.update(FOCUS_TIMER_KEY, this.focusTimer);
         this.post({ type: 'focusTimer', timer: this.focusTimer, now: Date.now() });
         break;
+    }
+  }
+
+  /**
+   * Guarda la fuente elegida en el panel en los ajustes de Muxentra, así vale
+   * para todas las ventanas y sobrevive a reinicios. El valor llega del webview,
+   * así que se valida como cualquier otra entrada externa.
+   */
+  private async setFont(fontFamily: unknown, fontSize: unknown): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('muxentra');
+    const target = (key: string): vscode.ConfigurationTarget =>
+      cfg.inspect(key)?.workspaceValue === undefined ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace;
+    if (typeof fontFamily === 'string') {
+      const family = fontFamily.trim();
+      if (family.length > 120 || !/^[\p{L}\p{N}\s,'".\-_]*$/u.test(family)) {
+        void vscode.window.showWarningMessage('Muxentra: el nombre de la fuente tiene caracteres que no se admiten.');
+        return;
+      }
+      await cfg.update('fontFamily', family, target('fontFamily'));
+      log().info(`fuente: ${family || 'la de VS Code'}`);
+    }
+    if (typeof fontSize === 'number' && Number.isFinite(fontSize)) {
+      const size = fontSize <= 0 ? 0 : Math.min(40, Math.max(6, Math.round(fontSize)));
+      await cfg.update('fontSize', size, target('fontSize'));
     }
   }
 
@@ -613,6 +640,15 @@ export class MuxentraPanel {
     const script = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.js'));
     const style = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.css'));
     const gitStyle = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'gitView.css'));
+    // Fira Code y JetBrains Mono (licencia OFL, en assets/fonts) van dentro de
+    // la extensión: se ven bien aunque el usuario no tenga ninguna instalada.
+    const fonts = webview.asWebviewUri(vscode.Uri.joinPath(this.ctx.extensionUri, 'assets', 'fonts'));
+    const bundledFonts = [
+      ['Fira Code', 400, 'FiraCode-Regular.woff2'], ['Fira Code', 700, 'FiraCode-Bold.woff2'],
+      ['JetBrains Mono', 400, 'JetBrainsMono-Regular.woff2'], ['JetBrains Mono', 700, 'JetBrainsMono-Bold.woff2'],
+    ].map(([family, weight, file]) =>
+      `@font-face { font-family: '${family}'; font-weight: ${weight}; font-display: swap; src: url('${fonts}/${file}') format('woff2'); }`,
+    ).join('\n');
     const nonce = createNonce();
     // Sin saludo de apertura no hay capa que quitar ni nada que bloquear.
     const opening = vscode.workspace.getConfiguration('muxentra').get<boolean>('openingAnimation') ?? true;
@@ -631,6 +667,7 @@ export class MuxentraPanel {
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${style}">
+  <style>${bundledFonts}</style>
   <title>Muxentra</title>
 </head>
 <body>
@@ -666,6 +703,22 @@ export class MuxentraPanel {
         <button id="focus-stop" type="button">Desactivar</button>
       </div>
     </div>
+    <div id="font-popover" role="dialog" aria-label="Tipografía de la terminal" hidden>
+      <div class="font-popover-heading"><strong>Tipografía</strong><span>Se guarda en tus ajustes</span></div>
+      <div id="font-list" role="listbox" aria-label="Fuentes disponibles"></div>
+      <form id="font-custom-form">
+        <input id="font-custom" type="text" placeholder="Otra familia instalada, p. ej. Hack Nerd Font Mono" autocomplete="off" spellcheck="false" maxlength="120">
+        <button id="font-custom-apply" type="submit">Usar</button>
+      </form>
+      <div class="font-size-row">
+        <span>Tamaño</span>
+        <button id="font-size-minus" type="button" aria-label="Reducir tamaño">−</button>
+        <strong id="font-size-value" aria-live="polite">14</strong>
+        <button id="font-size-plus" type="button" aria-label="Aumentar tamaño">+</button>
+        <button id="font-reset" type="button">Igual que VS Code</button>
+      </div>
+      <p id="font-hint">Con una Nerd Font se ven los iconos del prompt. Las ligaduras no se dibujan con el renderizador acelerado.</p>
+    </div>
     <div id="bottom-bar" hidden${gate}>
       <div id="usage" hidden></div>
       <div id="focus" hidden>
@@ -685,15 +738,21 @@ export function currentSettings(): TermSettings {
   const cfg = vscode.workspace.getConfiguration('muxentra');
   const term = vscode.workspace.getConfiguration('terminal.integrated');
   const editor = vscode.workspace.getConfiguration('editor');
-  const fontFamily =
-    cfg.get<string>('fontFamily') || term.get<string>('fontFamily') || editor.get<string>('fontFamily') || 'monospace';
-  const fontSize =
-    cfg.get<number>('fontSize') || term.get<number>('fontSize') || editor.get<number>('fontSize') || 14;
+  const customFontFamily = (cfg.get<string>('fontFamily') ?? '').trim();
+  const inheritedFontFamily = term.get<string>('fontFamily') || editor.get<string>('fontFamily') || 'monospace';
+  const fontFamily = customFontFamily || inheritedFontFamily;
+  const customFontSize = cfg.get<number>('fontSize') || 0;
+  const inheritedFontSize = term.get<number>('fontSize') || editor.get<number>('fontSize') || 14;
+  const fontSize = customFontSize || inheritedFontSize;
   const blink = term.get<string | boolean>('cursorBlinking');
   const windowsBuildNumber = process.platform === 'win32' ? Number.parseInt(os.release().split('.')[2] ?? '0', 10) || 0 : 0;
   return {
     fontFamily,
     fontSize,
+    customFontFamily,
+    inheritedFontFamily,
+    customFontSize,
+    inheritedFontSize,
     letterSpacing: term.get<number>('letterSpacing') ?? 0,
     lineHeight: Math.max(1, term.get<number>('lineHeight') ?? 1),
     fontWeight: terminalFontWeight(term.get<string>('fontWeight'), 'normal'),

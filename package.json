@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -266,12 +266,12 @@
         "muxentra.fontFamily": {
           "type": "string",
           "default": "",
-          "description": "Fuente de las terminales. Vacío: usa terminal.integrated.fontFamily o editor.fontFamily."
+          "description": "Fuente de las terminales. Vacío: usa terminal.integrated.fontFamily o editor.fontFamily. El botón Aa de la barra del panel la cambia desde ahí; Fira Code y JetBrains Mono vienen incluidas."
         },
         "muxentra.fontSize": {
           "type": "number",
           "default": 0,
-          "description": "Tamaño de fuente. 0: usa terminal.integrated.fontSize o editor.fontSize."
+          "description": "Tamaño de fuente. 0: usa terminal.integrated.fontSize o editor.fontSize. También se ajusta desde el botón Aa de la barra."
         },
         "muxentra.scrollback": {
           "type": "number",

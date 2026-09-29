@@ -1453,3 +1453,84 @@ body.pane-dragging * {
   .tab.active, .pane.active .pane-header { border: 1px solid Highlight; }
   .mark-flow { stroke: CanvasText; }
 }
+
+/* ---------- tipografía (botón Aa de la barra) ---------- */
+
+#font-popover {
+  position: absolute;
+  z-index: 35;
+  top: 54px;
+  right: 8px;
+  width: min(340px, calc(100% - 16px));
+  max-height: calc(100% - 55px);
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  border-radius: 12px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
+}
+#font-popover[hidden] { display: none; }
+.font-popover-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.24));
+}
+.font-popover-heading strong { font-size: 12px; }
+.font-popover-heading span, #font-hint { color: var(--vscode-descriptionForeground); font-size: 11px; }
+#font-list { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; }
+.font-option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms, border-color 160ms;
+}
+.font-option:hover { background: var(--mx-raised); }
+.font-option[aria-selected="true"] { background: var(--mx-hover); border-color: color-mix(in srgb, var(--mx-accent) 35%, var(--mx-line)); }
+.font-option:focus-visible { outline: 2px solid var(--mx-accent); outline-offset: -2px; }
+.font-option-name { font-size: 12px; font-weight: 600; }
+.font-option-sample { grid-column: 1; font-size: 12.5px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.font-option-tag { grid-row: 1 / span 2; align-self: center; font-family: var(--vscode-font-family, "Segoe UI", sans-serif); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--mx-accent); white-space: nowrap; }
+#font-custom-form { display: flex; gap: 6px; margin-top: 10px; }
+#font-custom-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--vscode-input-border, var(--mx-line));
+  border-radius: 7px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  font-size: 12px;
+}
+#font-popover button:not(.font-option) {
+  padding: 6px 10px;
+  border: 1px solid var(--mx-line);
+  border-radius: 7px;
+  background: var(--mx-raised);
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#font-popover button:not(.font-option):hover { border-color: var(--mx-accent); }
+#font-popover button:disabled { opacity: .5; cursor: default; }
+#font-popover button:not(.font-option):focus-visible, #font-custom-form input:focus-visible { outline: 2px solid var(--mx-accent); outline-offset: 1px; }
+.font-size-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; }
+.font-size-row > span { flex: 1; }
+.font-size-row strong { min-width: 24px; text-align: center; font-variant-numeric: tabular-nums; }
+#font-size-minus, #font-size-plus { width: 28px; padding: 6px 0; text-align: center; }
+#font-hint { margin: 10px 0 0; line-height: 1.45; }
+.workspace-actions .tab-font.active { color: var(--mx-accent); background: var(--mx-hover); }

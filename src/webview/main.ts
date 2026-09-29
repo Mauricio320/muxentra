@@ -108,6 +108,8 @@ const ICONS = {
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M4.4 6.3a3.6 3.6 0 0 1 6.2-2.5 3.6 3.6 0 0 1 1 2.5c0 3 1.2 4 1.2 4H6.7M6.9 12.1a1.3 1.3 0 0 0 2.2 0"/></svg>',
   timer:
     '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.2v3.6l2.2 1.3M6.2 1.5h3.6"/></svg>',
+  font:
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 12.5 5.4 3.2l3.6 9.3M3 9.4h4.8M14.2 12.5V8.6c0-1.1-.8-1.8-2-1.8-1 0-1.7.4-2.1 1M14.2 10.3c-.6-.3-1.4-.4-2.1-.2-.9.2-1.5.7-1.5 1.4 0 .8.7 1.2 1.6 1.2.9 0 1.6-.4 2-1"/></svg>',
   pause:
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3v10M10.5 3v10"/></svg>',
   play:
@@ -149,6 +151,10 @@ let settings: TermSettings = {
   attentionSound: false,
   notificationsEnabled: true,
   openingAnimation: true,
+  customFontFamily: '',
+  inheritedFontFamily: 'monospace',
+  customFontSize: 0,
+  inheritedFontSize: 14,
 };
 let theme: ITheme = buildTheme();
 
@@ -178,6 +184,14 @@ const focusActionsEl = document.getElementById('focus-actions') as HTMLElement;
 const focusToggleEl = document.getElementById('focus-toggle') as HTMLButtonElement;
 const focusSkipEl = document.getElementById('focus-skip') as HTMLButtonElement;
 const focusStopEl = document.getElementById('focus-stop') as HTMLButtonElement;
+const fontPopoverEl = document.getElementById('font-popover') as HTMLElement;
+const fontListEl = document.getElementById('font-list') as HTMLElement;
+const fontCustomFormEl = document.getElementById('font-custom-form') as HTMLFormElement;
+const fontCustomEl = document.getElementById('font-custom') as HTMLInputElement;
+const fontSizeValueEl = document.getElementById('font-size-value') as HTMLElement;
+const fontSizeMinusEl = document.getElementById('font-size-minus') as HTMLButtonElement;
+const fontSizePlusEl = document.getElementById('font-size-plus') as HTMLButtonElement;
+const fontResetEl = document.getElementById('font-reset') as HTMLButtonElement;
 // ---------------------------------------------------------------- apertura
 //
 // Un saludo, no una puerta. Dura lo que tarda la M en dibujarse y se va en
@@ -413,6 +427,7 @@ async function applySettings(next: TermSettings): Promise<void> {
   }
   renderTabBar();
   fitVisible();
+  if (fontPopoverOpen) renderFontList();
 }
 
 // ---------------------------------------------------------------- panes
@@ -1340,6 +1355,11 @@ window.addEventListener(
       ev.preventDefault();
       ev.stopPropagation();
       setFocusPopover(false);
+    } else if (fontPopoverOpen) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setFontPopover(false);
+      if (!gitActive) activePane()?.term.focus();
     }
   },
   true,
@@ -1441,7 +1461,13 @@ function renderTabBar(): void {
   notifications.classList.add('tab-notifications');
   notifications.setAttribute('aria-label', notifications.title);
   notifications.setAttribute('aria-pressed', String(settings.notificationsEnabled));
-  actions.append(add, openGit, focus, notifications);
+  const font = iconButton(ICONS.font, 'Tipografía de la terminal', () => setFontPopover(!fontPopoverOpen));
+  font.classList.add('tab-font');
+  font.classList.toggle('active', !!settings.customFontFamily || !!settings.customFontSize);
+  font.setAttribute('aria-label', font.title);
+  font.setAttribute('aria-controls', 'font-popover');
+  font.setAttribute('aria-expanded', String(fontPopoverOpen));
+  actions.append(add, openGit, focus, font, notifications);
   tabs.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
@@ -1607,6 +1633,7 @@ function activateGit(): void {
   gitEl.hidden = false;
   gitEl.classList.add('git-entering');
   setFocusPopover(false);
+  setFontPopover(false);
   updateBottomBarVisibility();
   renderTabBar();
   post({ type: 'git', message: { type: 'refresh' } });
@@ -1859,6 +1886,7 @@ function setFocusPopover(open: boolean, anchor: 'top' | 'bottom' = 'top'): void 
   if (!open) return;
   openUsageId = null;
   renderUsagePopover();
+  if (fontPopoverOpen) setFontPopover(false);
   focusWorkEl.value = String(focusTimer.workMinutes);
   focusBreakEl.value = String(focusTimer.breakMinutes);
   focusSoundEl.value = focusTimer.sound;
@@ -1868,6 +1896,124 @@ function setFocusPopover(open: boolean, anchor: 'top' | 'bottom' = 'top'): void 
   updateFocusActions();
   focusWorkEl.focus();
 }
+
+// ---------------------------------------------------------------- tipografía
+
+let fontPopoverOpen = false;
+/** Vienen dentro de la extensión (assets/fonts, licencia OFL): siempre disponibles. */
+const BUNDLED_FONTS = ['Fira Code', 'JetBrains Mono'];
+/** Familias monoespaciadas habituales; solo se listan las que estén instaladas. */
+const FONT_CANDIDATES = [
+  'MesloLGM Nerd Font', 'MesloLGS Nerd Font', 'MesloLGM Nerd Font Mono', 'JetBrainsMono Nerd Font', 'JetBrainsMono Nerd Font Mono',
+  'FiraCode Nerd Font', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font', 'CaskaydiaCove Nerd Font Mono', 'Hack Nerd Font',
+  'Hack Nerd Font Mono', 'SauceCodePro Nerd Font', 'UbuntuMono Nerd Font', 'DejaVuSansM Nerd Font', 'RobotoMono Nerd Font',
+  'Iosevka Nerd Font', '0xProto Nerd Font', 'GeistMono Nerd Font', 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Source Code Pro',
+  'Hack', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Menlo', 'Monaco', 'SF Mono', 'Iosevka', 'Victor Mono', 'IBM Plex Mono', 'Roboto Mono',
+  'Geist Mono', 'Courier New',
+];
+const fontAvailability = new Map<string, boolean>();
+
+/**
+ * Un webview no puede enumerar las fuentes del sistema, pero sí medir: si un
+ * texto cambia de ancho al pedir la familia con distintas alternativas, la
+ * familia existe. Comparar contra serif y sans-serif evita el falso negativo
+ * de dos monoespaciadas con el mismo avance.
+ */
+function fontAvailable(family: string): boolean {
+  if (BUNDLED_FONTS.includes(family)) return true;
+  const cached = fontAvailability.get(family);
+  if (cached !== undefined) return cached;
+  const context = document.createElement('canvas').getContext('2d');
+  if (!context) return false;
+  const sample = 'mmmmmmmmmmlliI1|{}[]=>~@';
+  const differs = (fallback: string): boolean => {
+    context.font = `72px ${fallback}`;
+    const base = context.measureText(sample).width;
+    context.font = `72px "${family.replace(/"/g, '')}", ${fallback}`;
+    return context.measureText(sample).width !== base;
+  };
+  const available = differs('serif') || differs('sans-serif') || differs('monospace');
+  fontAvailability.set(family, available);
+  return available;
+}
+
+function setFontPopover(open: boolean): void {
+  fontPopoverOpen = open;
+  fontPopoverEl.hidden = !open;
+  tabbarEl.querySelector('.tab-font')?.setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  setFocusPopover(false);
+  openUsageId = null;
+  renderUsagePopover();
+  renderFontList();
+  fontListEl.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+}
+
+function chooseFont(fontFamily: string): void {
+  post({ type: 'setFont', fontFamily });
+  settings = { ...settings, customFontFamily: fontFamily, fontFamily: fontFamily || settings.inheritedFontFamily };
+  renderFontList();
+}
+
+function renderFontList(): void {
+  const current = settings.customFontFamily;
+  const entries: { family: string; label: string; tag: string }[] = [
+    { family: '', label: 'Igual que VS Code', tag: settings.inheritedFontFamily },
+  ];
+  if (current && !BUNDLED_FONTS.includes(current) && !FONT_CANDIDATES.includes(current)) {
+    entries.push({ family: current, label: current, tag: 'actual' });
+  }
+  for (const family of BUNDLED_FONTS) entries.push({ family, label: family, tag: 'incluida' });
+  for (const family of FONT_CANDIDATES) {
+    if (fontAvailable(family)) entries.push({ family, label: family, tag: /nerd font/i.test(family) ? 'Nerd Font · iconos' : 'instalada' });
+  }
+  fontListEl.replaceChildren(...entries.map(entry => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'font-option';
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', String(entry.family === current));
+    option.style.fontFamily = entry.family ? `"${entry.family.replace(/"/g, '')}"` : settings.inheritedFontFamily;
+    const name = document.createElement('span');
+    name.className = 'font-option-name';
+    name.textContent = entry.label;
+    const sample = document.createElement('span');
+    sample.className = 'font-option-sample';
+    sample.textContent = 'Aa 0O il1 {} -> => ~/src';
+    const tag = document.createElement('span');
+    tag.className = 'font-option-tag';
+    tag.textContent = entry.tag;
+    option.append(name, sample, tag);
+    option.addEventListener('click', () => chooseFont(entry.family));
+    return option;
+  }));
+  fontSizeValueEl.textContent = String(settings.fontSize);
+  fontResetEl.disabled = !current && !settings.customFontSize;
+}
+
+fontCustomFormEl.addEventListener('submit', ev => {
+  ev.preventDefault();
+  const family = fontCustomEl.value.trim();
+  if (!family) return;
+  fontCustomEl.value = '';
+  chooseFont(family);
+});
+const stepFontSize = (delta: number): void => {
+  const size = Math.min(40, Math.max(6, settings.fontSize + delta));
+  post({ type: 'setFont', fontSize: size });
+  settings = { ...settings, fontSize: size, customFontSize: size };
+  fontSizeValueEl.textContent = String(size);
+  fontResetEl.disabled = false;
+};
+fontSizeMinusEl.addEventListener('click', () => stepFontSize(-1));
+fontSizePlusEl.addEventListener('click', () => stepFontSize(1));
+fontResetEl.addEventListener('click', () => {
+  post({ type: 'setFont', fontFamily: '', fontSize: 0 });
+  settings = { ...settings, customFontFamily: '', fontFamily: settings.inheritedFontFamily, customFontSize: 0, fontSize: settings.inheritedFontSize };
+  renderFontList();
+});
+// Cargar las incluidas desde el principio: así el primer render con ellas ya sale bien.
+for (const family of BUNDLED_FONTS) void document.fonts.load(`12px "${family}"`).catch(() => undefined);
 
 function updateFocusActions(): void {
   focusSaveEl.textContent = focusTimer.enabled ? 'Guardar ajustes' : 'Iniciar';
@@ -2210,6 +2356,7 @@ document.addEventListener('mousedown', ev => {
   if (focusPopoverOpen && !focusPopoverEl.contains(target) && !focusEl.contains(target) && !target.closest('.tab-focus')) {
     setFocusPopover(false);
   }
+  if (fontPopoverOpen && !fontPopoverEl.contains(target) && !target.closest('.tab-font')) setFontPopover(false);
   if (!openUsageId) return;
   if (usagePopoverEl.contains(target) || usageEl.contains(target)) return;
   openUsageId = null;

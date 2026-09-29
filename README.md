@@ -75,7 +75,7 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.12.0 build appears as `mauriciotriana.muxentra@0.12.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.13.0 build appears as `mauriciotriana.muxentra@0.13.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -115,6 +115,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 - Every tab can be given a colour (right-click the tab) so you can find it at a glance.
 - Every terminal shows what it is up to: a pulsing blue dot while it works, a green "listo" label when it finishes, an orange "atención" one when the program is asking for something. The dot is repeated on the tab, the number of waiting terminals appears in the panel title and in the VS Code status bar, and a notification offers to take you there. Built for having four agents running and knowing which one needs you.
 - A compact bottom bar with Claude Code and OpenAI Codex usage: each provider card keeps all limit percentages and shows a reset countdown beside the matching percentage, on the same line. It prioritizes the current five-hour reset, falling back to the weekly reset when no current five-hour timestamp is available. Missing, expired or stale schedules show a dash with a "Reinicio pendiente" tooltip. Countdowns update every 30 seconds without polling providers or moving keyboard focus. Hover the countdown for the exact reset date and time, click a card for details, or use the refresh button to update usage.
+- A font picker behind the Aa button: Fira Code and JetBrains Mono ship inside the extension (SIL Open Font License, see `assets/fonts/`), so they work even on a machine with nothing installed, and any monospace or Nerd Font you have installed shows up next to them, each previewed in its own glyphs. A Nerd Font makes prompt icons (starship, oh-my-posh, powerlevel10k) render. Ligatures are not drawn: the accelerated WebGL renderer works per cell.
 - A work/break timer: click the clock beside the tab bar, choose the minutes (20/5 by default) and start. The active countdown appears beside usage at the bottom, with pause/resume; click it to change durations, choose and preview one of three chimes (about 0.6, 1.1 or 1.8 seconds), skip a phase or turn it off. The selected sound is saved. Work and break alternate automatically; the chime plays at phase changes while the panel is visible, and the timer keeps time across panel and window reloads.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
 - `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS) pastes images: the clipboard image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent.
@@ -178,7 +179,7 @@ Worth knowing:
 ## Settings
 
 - `muxentra.shellPath` and `muxentra.shellArgs`: an explicit shell. Empty means your default VS Code profile.
-- `muxentra.fontFamily` and `muxentra.fontSize`: when empty they come from `terminal.integrated.*` or `editor.*`.
+- `muxentra.fontFamily` and `muxentra.fontSize`: when empty they come from `terminal.integrated.*` or `editor.*`. The Aa button in the panel's tab bar sets them without opening the settings editor: pick a font, step the size, or go back to VS Code's. It writes to your user settings (or the workspace, when the value already lives there), so the choice follows you to every window and survives reloads.
 - `muxentra.scrollback`: lines of history per terminal. Defaults to 20000, enough to hold a whole Codex transcript.
 - `muxentra.rebuildAwareScrollback`: use the modern ConPTY bundled with node-pty on Windows. This preserves TUI erase, positioning and alternate-screen sequences that the Windows 10 backend can rewrite incorrectly. On by default; changes apply to new terminals. Turning it off selects the system backend. Output volume never triggers history deletion.
 - `muxentra.showUsage`: show or hide the bottom usage bar.
