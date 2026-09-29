@@ -10,9 +10,17 @@ package-lock.json
 **/*.map
 **/*.pdb
 **/*.vsix
-dist/visual-review/**
-dist/qa-*.py
+# De dist/ solo entra lo que carga la extensión. Todo lo demás que caiga ahí
+# (perfiles de captura, scripts de QA, zips) se queda fuera por defecto: un
+# perfil de VS Code con cookies llegó a colarse en el .vsix de la 0.13.1.
+dist/**
+!dist/extension.js
+!dist/server.js
+!dist/webview.js
+!dist/webview.css
+!dist/gitView.css
 debug.log
+.gitignore
 node_modules/node-pty/build/**
 node_modules/node-pty/src/**
 node_modules/node-pty/deps/**
