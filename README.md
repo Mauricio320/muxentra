@@ -83,14 +83,14 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.14.0 build appears as `mauriciotriana.muxentra@0.14.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.15.0 build appears as `mauriciotriana.muxentra@0.15.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
 1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right, on the terminal tab you were using last, with the cursor in its terminal. Git is one click away: the Git button beside the timer and bell, or "Muxentra: Abrir Git". Once open, the icon-only Git tab sits first in the tab bar and the next/previous tab shortcuts include it. The toolbar button is disabled while Git is selected. `muxentra.openGitOnOpen` puts the Git tab there from the start.
    On open, a one-second greeting draws the fluid M and then flies it into its slot in the tab bar while the workspace reveals underneath. It lasts exactly as long as the stroke takes and leaves the moment the active tab's terminals answer; Git loads on its own and never holds the workspace back. Any key or click dismisses it at once. Only if a terminal is slow does a progress line appear with what it is waiting for, and after three seconds an "Entrar ahora" button. With reduced motion there is no drawing and no minimum: the mark shows still and the workspace appears as soon as it is ready. `muxentra.openingAnimation` turns the greeting off entirely.
 2. Split it: `Ctrl+\` to the right, `Ctrl+Shift+\` downwards. Drag the dividers to share out the space, or run "Muxentra: Igualar tamaño de terminales" from the command palette.
-3. `Ctrl+Shift+T` opens another tab. `F2` renames it, right-click colours it, and `Shift+F2` renames the focused terminal.
+3. `Ctrl+Shift+T` opens another tab. Drag terminal tabs to reorder them; their positions are saved with the workspace. `F2` renames a tab, right-click colours it, and `Shift+F2` renames the focused terminal.
 4. Drag a terminal by its header to rearrange it: drop it in the middle of another one and they swap, drop it near an edge and it moves to that side.
 5. `Ctrl+Shift+W` closes the focused terminal. Closing the panel, reloading the window or quitting VS Code kills nothing: the processes stay alive and every terminal comes back with whatever it was running.
 

@@ -44,6 +44,25 @@ interface DragState {
   ghost: HTMLElement;
 }
 
+interface TabDragState {
+  source: string;
+  element: HTMLElement;
+  tabs: HTMLElement;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+  slots?: { id: string; element: HTMLElement; midpoint: number }[];
+  sourceIndex?: number;
+  insertionIndex?: number;
+  step?: number;
+  originLeft?: number;
+  originTop?: number;
+  ghost?: HTMLElement;
+  target?: string;
+  after?: boolean;
+}
+
 interface Pane {
   termId: string;
   term: Terminal;
@@ -1342,6 +1361,10 @@ window.addEventListener(
       ev.preventDefault();
       ev.stopPropagation();
       endDrag(false);
+    } else if (tabDrag?.active) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      endTabDrag(false);
     } else if (openMenu) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -1367,7 +1390,207 @@ window.addEventListener(
 
 // ---------------------------------------------------------------- barra de pestañas
 
-function renderTabBar(): void {
+let tabDrag: TabDragState | undefined;
+let suppressTabClick = false;
+
+function enableTabDrag(element: HTMLElement, tabs: HTMLElement, tabId: string): void {
+  element.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0 || state.tabs.length < 2 || tabDrag || (ev.target as HTMLElement).closest('button, input')) return;
+    tabDrag = {
+      source: tabId,
+      element,
+      tabs,
+      pointerId: ev.pointerId,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      active: false,
+    };
+    element.setPointerCapture(ev.pointerId);
+  });
+
+  element.addEventListener('pointermove', ev => {
+    if (!tabDrag || tabDrag.pointerId !== ev.pointerId) return;
+    if (!tabDrag.active) {
+      if (Math.hypot(ev.clientX - tabDrag.startX, ev.clientY - tabDrag.startY) < 6) return;
+      beginTabDrag(tabDrag);
+    }
+    if (tabDrag.ghost) {
+      tabDrag.ghost.style.transform = `translate3d(${ev.clientX - tabDrag.startX}px, ${ev.clientY - tabDrag.startY}px, 0) scale(1.035) rotate(-1deg)`;
+    }
+    updateTabDragTarget(ev.clientX, ev.clientY);
+  });
+
+  element.addEventListener('pointerup', ev => {
+    if (tabDrag?.pointerId === ev.pointerId) endTabDrag(true);
+  });
+  element.addEventListener('pointercancel', ev => {
+    if (tabDrag?.pointerId === ev.pointerId) endTabDrag(false);
+  });
+}
+
+function beginTabDrag(current: TabDragState): void {
+  current.active = true;
+  const rect = current.element.getBoundingClientRect();
+  const bounds = current.tabs.getBoundingClientRect();
+  current.slots = [...current.tabs.querySelectorAll<HTMLElement>('.tab[data-tab-id]')].map(element => {
+    const tabRect = element.getBoundingClientRect();
+    return {
+      id: element.dataset.tabId ?? '',
+      element,
+      midpoint: tabRect.left - bounds.left + current.tabs.scrollLeft + tabRect.width / 2,
+    };
+  });
+  current.sourceIndex = current.slots.findIndex(slot => slot.id === current.source);
+  current.step = rect.width + (parseFloat(getComputedStyle(current.tabs).columnGap) || 0);
+  current.originLeft = rect.left;
+  current.originTop = rect.top;
+
+  const ghost = current.element.cloneNode(true) as HTMLElement;
+  ghost.classList.add('tab-drag-ghost');
+  ghost.removeAttribute('data-tab-id');
+  ghost.removeAttribute('role');
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.inert = true;
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  ghost.style.width = `${rect.width}px`;
+  ghost.style.height = `${rect.height}px`;
+  document.body.append(ghost);
+  current.ghost = ghost;
+  document.body.classList.add('tab-dragging');
+  current.element.classList.add('tab-drag-source');
+}
+
+function setTabDragPreview(current: TabDragState, insertionIndex?: number): void {
+  if (current.insertionIndex === insertionIndex) return;
+  current.insertionIndex = insertionIndex;
+  current.target = undefined;
+  current.after = undefined;
+  const slots = current.slots ?? [];
+  for (const slot of slots) {
+    slot.element.classList.remove('tab-preview-shift', 'tab-drop-before', 'tab-drop-after');
+    slot.element.style.removeProperty('--tab-preview-shift');
+  }
+  if (insertionIndex === undefined || insertionIndex === current.sourceIndex) return;
+
+  const others = slots.filter(slot => slot.id !== current.source);
+  const target = insertionIndex === 0 ? others[0] : others[insertionIndex - 1];
+  if (!target) return;
+  current.target = target.id;
+  current.after = insertionIndex !== 0;
+  target.element.classList.add(current.after ? 'tab-drop-after' : 'tab-drop-before');
+
+  const sourceIndex = current.sourceIndex ?? -1;
+  const shift = current.step ?? 0;
+  for (let index = 0; index < slots.length; index++) {
+    if (index === sourceIndex) continue;
+    const displacement = insertionIndex < sourceIndex && index >= insertionIndex && index < sourceIndex
+      ? shift
+      : insertionIndex > sourceIndex && index > sourceIndex && index <= insertionIndex ? -shift : 0;
+    if (!displacement) continue;
+    slots[index].element.style.setProperty('--tab-preview-shift', `${displacement}px`);
+    slots[index].element.classList.add('tab-preview-shift');
+  }
+}
+
+function updateTabDragTarget(x: number, y: number): void {
+  if (!tabDrag) return;
+  const { tabs } = tabDrag;
+  const bounds = tabs.getBoundingClientRect();
+  if (y < bounds.top || y > bounds.bottom || x < bounds.left || x > bounds.right) {
+    setTabDragPreview(tabDrag);
+    return;
+  }
+  if (x < bounds.left + 24) tabs.scrollLeft -= 14;
+  else if (x > bounds.right - 24) tabs.scrollLeft += 14;
+  const contentX = x - bounds.left + tabs.scrollLeft;
+  const others = (tabDrag.slots ?? []).filter(slot => slot.id !== tabDrag?.source);
+  const insertionIndex = others.findIndex(slot => contentX < slot.midpoint);
+  setTabDragPreview(tabDrag, insertionIndex < 0 ? others.length : insertionIndex);
+}
+
+function settleTabGhost(current: TabDragState, destination: HTMLElement | null, placed: boolean): void {
+  const ghost = current.ghost;
+  const finish = (): void => {
+    ghost?.remove();
+    current.element.classList.remove('tab-drag-source');
+    destination?.classList.remove('tab-arriving');
+    if (placed && destination?.isConnected && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      destination.classList.add('tab-placed');
+      destination.addEventListener('animationend', () => destination.classList.remove('tab-placed'), { once: true });
+    }
+  };
+  if (!ghost || !destination || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    finish();
+    return;
+  }
+  if (placed) destination.classList.add('tab-arriving');
+  const rect = destination.getBoundingClientRect();
+  const animation = ghost.animate([
+    { transform: ghost.style.transform },
+    { transform: `translate3d(${rect.left - (current.originLeft ?? rect.left)}px, ${rect.top - (current.originTop ?? rect.top)}px, 0) scale(1) rotate(0deg)` },
+  ], { duration: 240, easing: 'cubic-bezier(.2,.75,.2,1)', fill: 'forwards' });
+  animation.onfinish = finish;
+  animation.oncancel = finish;
+}
+
+function endTabDrag(commit: boolean, animate = true): void {
+  if (!tabDrag) return;
+  const current = tabDrag;
+  const { source, element, pointerId, active, target, after } = current;
+  tabDrag = undefined;
+  try {
+    element.releasePointerCapture(pointerId);
+  } catch {
+    // El navegador ya liberó la captura.
+  }
+  document.body.classList.remove('tab-dragging');
+  if (!active) return;
+  suppressTabClick = true;
+  window.setTimeout(() => { suppressTabClick = false; }, 0);
+  const moved = !!(commit && target && after !== undefined && moveTab(source, target, after, current));
+  if (!moved) setTabDragPreview(current);
+  if (!animate) {
+    current.ghost?.remove();
+    element.classList.remove('tab-drag-source');
+    return;
+  }
+  const destination = moved
+    ? tabbarEl.querySelector<HTMLElement>(`.tab[data-tab-id="${source}"]`)
+    : element;
+  settleTabGhost(current, destination, moved);
+}
+
+function moveTab(sourceId: string, targetId: string, after: boolean, current: TabDragState): boolean {
+  const sourceIndex = state.tabs.findIndex(tab => tab.id === sourceId);
+  const targetIndex = state.tabs.findIndex(tab => tab.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) return false;
+  const insertionIndex = targetIndex + Number(after);
+  if (sourceIndex === insertionIndex || sourceIndex + 1 === insertionIndex) return false;
+  const previous = new Map((current.slots ?? []).map(slot => [slot.id, slot.element.getBoundingClientRect()]));
+  const [tab] = state.tabs.splice(sourceIndex, 1);
+  state.tabs.splice(insertionIndex - Number(sourceIndex < insertionIndex), 0, tab);
+  renderTabBar(sourceId);
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    for (const element of tabbarEl.querySelectorAll<HTMLElement>('.tab[data-tab-id]')) {
+      if (element.dataset.tabId === sourceId) continue;
+      const before = previous.get(element.dataset.tabId ?? '');
+      if (!before) continue;
+      const delta = before.left - element.getBoundingClientRect().left;
+      if (Math.abs(delta) < 1) continue;
+      element.animate([
+        { transform: `translate3d(${delta}px, 0, 0)` },
+        { transform: 'translate3d(0, 0, 0)' },
+      ], { duration: 220, easing: 'cubic-bezier(.2,.75,.2,1)' });
+    }
+  }
+  tabbarEl.querySelector<HTMLElement>(`.tab[data-tab-id="${sourceId}"]`)?.focus({ preventScroll: true });
+  persist();
+  return true;
+}
+
+function renderTabBar(scrollTabId?: string): void {
+  if (tabDrag) endTabDrag(false, false);
   tabbarEl.replaceChildren();
   const brand = document.createElement('span');
   brand.className = 'workspace-brand';
@@ -1397,6 +1620,7 @@ function renderTabBar(): void {
     el.tabIndex = 0;
     el.setAttribute('role', 'button');
     el.setAttribute('aria-pressed', String(!gitActive && tab.id === state.activeTabId));
+    enableTabDrag(el, tabs, tab.id);
     el.addEventListener('keydown', event => {
       if (event.target !== el || !['Enter', ' '].includes(event.key)) return;
       event.preventDefault();
@@ -1428,6 +1652,7 @@ function renderTabBar(): void {
 
     el.append(name, close);
     el.addEventListener('click', () => {
+      if (suppressTabClick) return;
       if (gitActive || state.activeTabId !== tab.id) activateTab(tab.id);
       else activePane()?.term.focus();
     });
@@ -1468,7 +1693,8 @@ function renderTabBar(): void {
   font.setAttribute('aria-controls', 'font-popover');
   font.setAttribute('aria-expanded', String(fontPopoverOpen));
   actions.append(add, openGit, focus, font, notifications);
-  tabs.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  (scrollTabId ? tabs.querySelector<HTMLElement>(`.tab[data-tab-id="${scrollTabId}"]`) : tabs.querySelector('.active'))
+    ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 // ---------------------------------------------------------------- menú de pestaña
