@@ -83,7 +83,7 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.15.0 build appears as `mauriciotriana.muxentra@0.15.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.15.1 build appears as `mauriciotriana.muxentra@0.15.1`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
@@ -236,6 +236,8 @@ Worth knowing:
 - **Fresh shells started when I reopened VS Code.** The server shuts itself down after five minutes with no live terminals and no open panels; if nothing was running, that is expected.
 - **I cannot scroll up while Codex is answering.** Codex renders the answer it is writing inside its own area of the screen and only hands it to the terminal history once the turn is committed. Until then, press Ctrl+T inside Codex to open its transcript and scroll there; afterwards the plain mouse wheel scrolls the terminal history as usual. Do not hold Shift: in a webview that turns the wheel into a horizontal scroll and nothing moves.
 - **A shortcut does not respond.** Another extension may be taking it: look it up in Keyboard Shortcuts by typing "muxentra" and reassign it.
+- **Shift+Enter in Codex inserts `[13;2u` instead of a new line.** Install Muxentra 0.15.1 or newer and reload the window. On Windows, Shift+Enter now sends a native modified key event for Codex and keeps Claude's VT input sequence, identified by its automatic terminal title. Enter still submits as usual.
+- **Codex opens extra Git console windows on Windows.** This matches a [reported Codex CLI issue](https://github.com/openai/codex/issues/49181). Muxentra's own background Git queries already run hidden; this keyboard fix does not change the way Codex launches its child processes.
 
 If something really breaks, open an issue with whatever the Output > "Muxentra" channel says.
 

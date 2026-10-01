@@ -2073,10 +2073,16 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
   const mac = settings.platform === 'darwin';
   const mod = mac ? ev.metaKey : ev.ctrlKey;
 
-  // xterm envía \r tanto para Enter como para Shift+Enter. La secuencia CSI-u
-  // conserva el modificador para que Claude Code inserte una línea nueva.
+  // Codex nativo lee eventos Win32: ConPTY entrega CSI-u como texto. Claude
+  // lee entrada VT y necesita CSI-u; su título automático lo identifica incluso
+  // si el usuario renombró la terminal. El key-up libera el modificador.
   if (key === 'enter' && ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.isComposing) {
-    if (ev.type === 'keydown') pane.term.input('\x1b[13;2u');
+    if (ev.type === 'keydown') {
+      const nativeWindows = settings.platform === 'win32' && !/claude|✳/i.test(pane.autoTitle);
+      pane.term.input(nativeWindows
+        ? '\x1b[13;28;13;1;16;1_\x1b[13;28;13;0;0;1_'
+        : '\x1b[13;2u');
+    }
     ev.preventDefault();
     ev.stopPropagation();
     return false;
