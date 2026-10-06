@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -377,6 +377,7 @@
     "test:gitlab": "node tools/gitlabAvatars-regression.cjs",
     "test:usage": "node tools/usage-regression.cjs",
     "test:usage-reset": "node --experimental-strip-types tools/usageReset-regression.mjs",
+    "test:links": "node --experimental-strip-types tools/links-regression.mjs",
     "test:focus": "node --experimental-strip-types tools/focusTimer-regression.mjs",
     "package": "vsce package"
   },

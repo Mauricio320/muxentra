@@ -146,6 +146,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 - A work/break timer: click the clock beside the tab bar, choose the minutes (20/5 by default) and start. The active countdown appears beside usage at the bottom, with pause/resume; click it to change durations, choose and preview one of three chimes (about 0.6, 1.1 or 1.8 seconds), skip a phase or turn it off. The selected sound is saved. Work and break alternate automatically; the chime plays at phase changes while the panel is visible, and the timer keeps time across panel and window reloads.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
 - `Ctrl+V` (`Cmd+V` on macOS) pastes images too: when the clipboard holds an image and no text, the image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent. `Ctrl+Alt+V` (`Cmd+Alt+V`) does the same even when the clipboard also carries text.
+- Links in the output open in your browser with `Ctrl` + left click (`Cmd` + click on macOS), the same gesture as the integrated terminal. Hovering one underlines it; the hand cursor appears once the key is down, so a plain click still selects text as before. It finds `http://` and `https://` addresses, bare `www.` ones and the `OSC 8` hyperlinks that tools like `gh` or `npm` emit, and it follows a URL that wrapped across several lines. Only http and https are opened: `file://`, `vscode://` and the like are ignored on both sides of the webview.
 - Opening the panel creates a dedicated group on the right and locks it, so files keep opening in the main editor. The position survives a window restore. Unlock it with the VS Code padlock or with the `muxentra.lockEditorGroup` setting.
 - Tabs and their layout are saved per workspace.
 - Shells run in a separate terminal server, a process independent from VS Code. Closing the panel, reloading the window or quitting VS Code does not kill them: when you come back, each terminal reconnects to its process and shows what it had (Claude, Codex, a dev server, whatever was running). If the server is gone (first use, machine reboot), fresh shells are started.
@@ -169,6 +170,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 | Next / previous terminal | `Ctrl+Alt+→` / `Ctrl+Alt+←` | `Cmd+Alt+→` / `Cmd+Alt+←` |
 | Copy / paste | `Ctrl+Shift+C` / `Ctrl+Shift+V` (also `Ctrl+V`) | `Cmd+C` / `Cmd+V` |
 | Paste image from the clipboard | `Ctrl+V`, or `Ctrl+Alt+V` to force the image | `Cmd+V`, or `Cmd+Alt+V` |
+| Open a link from the output | `Ctrl` + left click | `Cmd` + click |
 
 "Muxentra: Igualar tamaño de terminales" and "Muxentra: Ir a la terminal que espera" live in the command palette with no default shortcut. Every shortcut can be changed in Keyboard Shortcuts (VS Code adapts them to your keyboard layout).
 
@@ -286,6 +288,7 @@ npm run test:git    # repositories, branches, commits, diffs and worktrees
 npm run test:gitlab # GitLab author portraits and matching
 npm run test:usage   # quota sources, precedence and the statusLine bridge
 npm run test:usage-reset # five-hour reset priority, weekly fallback and unavailable schedules
+npm run test:links   # link detection, trailing punctuation and non-http schemes
 npm run test:focus   # work/break timer transitions and persistence
 npm run package      # produces the .vsix
 ```
@@ -340,6 +343,7 @@ Anyone who can talk to the terminal server can start processes as you, so the ch
 - **The channel name is unpredictable.** It is derived from the token, so another user on the machine cannot guess it, claim it first and impersonate the server. On Windows the pipe namespace is system-wide, and on Linux the socket lives in `XDG_RUNTIME_DIR` or in a 0700 directory of its own, not loose in `/tmp`.
 - **Connections are bounded.** A connection that does not complete the handshake within 10 seconds is closed, an unterminated line is cut off past 4 KB before authentication, and any command sent unauthenticated closes the connection.
 - **Paths coming from the terminal are filtered.** Each terminal's directory is reported by the shell through `OSC 7` or in the title, which means by whatever program is running there. Network paths (`\\host\share`, `//host/x`, `file://host/x`) are discarded: on Windows merely touching one opens an SMB connection to whatever host the text names, which is enough to capture the user's NTLM hash, and it would block the extension host until it times out. The same applies to the `gitdir:` of a `.git` file, which is chosen by the repository you open.
+- **Links from the output are filtered twice.** The text was printed by whatever program runs in the terminal, so it is treated as outside input: the webview only turns http and https addresses into links, and the extension host validates the scheme again before handing the URL to the browser. Nothing opens on a plain click; it takes `Ctrl` (`Cmd`) and a deliberate click.
 - **The extension does not run in Restricted Mode.** It declares `untrustedWorkspaces: false`, so until you trust the folder it neither activates nor opens any shell.
 - **The webview is locked down.** `default-src 'none'`, scripts only with a random 192-bit nonce per load, resources limited to `dist/`. No `eval` and no network access from the interface.
 - **Claude account usage stays in the extension host.** Muxentra reads the local OAuth access token only to request current quota percentages from `api.anthropic.com`; the token and raw response never enter the webview, terminal server, logs or Muxentra files. Requests are bounded by a timeout and a five-minute automatic interval. Codex usage and the Claude fallback still come from local files. The optional Claude status-line connection backs up the existing configuration.

@@ -511,6 +511,9 @@ export class MuxentraPanel {
       case 'copy':
         void vscode.env.clipboard.writeText(m.text);
         break;
+      case 'openLink':
+        openExternalLink(m.url);
+        break;
       case 'refreshUsage':
         this.sendUsage(true);
         break;
@@ -783,6 +786,23 @@ function usageEnabled(): boolean {
 
 function branchEnabled(): boolean {
   return vscode.workspace.getConfiguration('muxentra').get<boolean>('showBranch') ?? true;
+}
+
+/**
+ * El texto del enlace lo escribió el programa que corre en la terminal, así que
+ * se valida aquí otra vez: solo http y https llegan al navegador. Esquemas como
+ * file:, vscode: o command: abrirían cosas del equipo sin pedir permiso.
+ */
+function openExternalLink(raw: string): void {
+  let url: vscode.Uri;
+  try {
+    url = vscode.Uri.parse(raw, true);
+  } catch {
+    return;
+  }
+  if (url.scheme !== 'http' && url.scheme !== 'https') return;
+  if (!url.authority) return;
+  void vscode.env.openExternal(url);
 }
 
 /**

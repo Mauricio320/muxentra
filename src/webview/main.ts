@@ -1,10 +1,11 @@
-import { Terminal, type ITerminalOptions, type ITheme } from '@xterm/xterm';
+import { Terminal, type ILink, type ILinkProvider, type ITerminalOptions, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
 import { brandMark } from '../brand';
 import { formatReset, preferredUsageReset } from './usageReset';
+import { findLinks, linkUrl } from './links';
 import { defaultFocusTimer, validFocusSound, type FocusPhase, type FocusSound, type FocusTimerState } from '../focusTimer';
 import { mountGitView } from '../gitView/main';
 import type {
@@ -408,6 +409,8 @@ function terminalOptions(): ITerminalOptions {
     fontWeightBold: settings.fontWeightBold,
     scrollback: settings.scrollback,
     theme,
+    // Hiperenlaces OSC 8: los emite el propio programa, se abren igual que los detectados.
+    linkHandler: { activate: activateLink, allowNonHttpProtocols: false },
     windowsPty:
       settings.platform === 'win32' ? { backend: 'conpty', buildNumber: settings.windowsBuildNumber } : undefined,
   };
@@ -447,6 +450,116 @@ async function applySettings(next: TermSettings): Promise<void> {
   renderTabBar();
   fitVisible();
   if (fontPopoverOpen) renderFontList();
+}
+
+// ---------------------------------------------------------------- enlaces
+
+/**
+ * Los enlaces se abren con Ctrl + clic (Cmd en mac), nunca con un clic suelto:
+ * en la terminal el clic empieza una selección, y el texto lo escribió el
+ * programa que corre dentro, así que nada se abre por accidente.
+ */
+function linkModifier(ev: { ctrlKey: boolean; metaKey: boolean }): boolean {
+  return settings.platform === 'darwin' ? ev.metaKey : ev.ctrlKey;
+}
+
+/** Enlaces bajo el puntero ahora mismo; la mano aparece solo con la tecla pulsada. */
+const hoveredLinks = new Set<ILink>();
+let linkModDown = false;
+
+function setLinkModifier(down: boolean): void {
+  if (linkModDown === down) return;
+  linkModDown = down;
+  // xterm sigue el objeto de decoraciones: cambiarlo ya repinta el enlace.
+  for (const link of hoveredLinks) if (link.decorations) link.decorations.pointerCursor = down;
+}
+
+for (const type of ['keydown', 'keyup'] as const) {
+  window.addEventListener(type, ev => setLinkModifier(linkModifier(ev)), true);
+}
+// Al salir del panel la tecla se suelta fuera y su keyup no llega nunca.
+window.addEventListener('blur', () => setLinkModifier(false));
+
+function activateLink(ev: MouseEvent, text: string): void {
+  if (ev.button !== 0 || !linkModifier(ev)) return;
+  const url = linkUrl(text);
+  if (!url) return;
+  ev.preventDefault();
+  post({ type: 'openLink', url });
+}
+
+/** Filas que se recorren como mucho al rearmar una línea partida por el ajuste. */
+const LINK_MAX_ROWS = 64;
+
+function linkProvider(term: Terminal): ILinkProvider {
+  return {
+    provideLinks(bufferLineNumber, callback) {
+      callback(linksInRow(term, bufferLineNumber));
+    },
+  };
+}
+
+/**
+ * Una URL larga se parte en varias filas del buffer, así que primero se rearma
+ * la línea lógica entera guardando de qué celda salió cada carácter; así el
+ * rango que recibe xterm cuadra aunque haya caracteres anchos o emojis.
+ *
+ * La fila que pide xterm, y la del rango que espera de vuelta, son líneas del
+ * buffer numeradas desde 1, no filas de la parte visible: con historial por
+ * encima las dos cuentas se separan.
+ */
+function linksInRow(term: Terminal, bufferLine: number): ILink[] | undefined {
+  const buffer = term.buffer.active;
+  const origin = bufferLine - 1;
+  let first = origin;
+  while (first > 0 && origin - first < LINK_MAX_ROWS && buffer.getLine(first)?.isWrapped) first--;
+
+  const cell = buffer.getNullCell();
+  const cells: { row: number; col: number }[] = [];
+  let text = '';
+  for (let row = first; row - first < LINK_MAX_ROWS; row++) {
+    const line = buffer.getLine(row);
+    if (!line || (row > first && !line.isWrapped)) break;
+    const width = Math.min(line.length, term.cols);
+    for (let col = 0; col < width; col++) {
+      if (!line.getCell(col, cell)) continue;
+      // Ancho 0: la segunda mitad de un carácter ancho, ya contada en la celda anterior.
+      if (cell.getWidth() === 0) continue;
+      const chars = cell.getChars() || ' ';
+      for (let i = 0; i < chars.length; i++) cells.push({ row, col });
+      text += chars;
+    }
+  }
+
+  const links: ILink[] = [];
+  for (const match of findLinks(text)) {
+    const start = cells[match.index];
+    const end = cells[match.index + match.text.length - 1];
+    if (!start || !end) continue;
+    const link: ILink = {
+      text: match.text,
+      range: {
+        start: { x: start.col + 1, y: start.row + 1 },
+        end: { x: end.col + 1, y: end.row + 1 },
+      },
+      // El subrayado avisa de que hay un enlace; la mano, de que ya se puede abrir.
+      decorations: { underline: true, pointerCursor: linkModDown },
+      activate: activateLink,
+      hover: ev => {
+        hoveredLinks.add(link);
+        setLinkModifier(linkModifier(ev));
+        // xterm sustituye el objeto de decoraciones por uno seguido justo después
+        // de este aviso, así que el estado de la tecla se vuelve a aplicar encima.
+        queueMicrotask(() => {
+          if (link.decorations) link.decorations.pointerCursor = linkModDown;
+        });
+      },
+      leave: () => void hoveredLinks.delete(link),
+      dispose: () => void hoveredLinks.delete(link),
+    };
+    links.push(link);
+  }
+  return links.length > 0 ? links : undefined;
 }
 
 // ---------------------------------------------------------------- panes
@@ -594,6 +707,7 @@ function ensurePane(termId: string): Pane {
     mount.addEventListener(type, () => { pane.userScroll++; }, { passive: true });
   }
   term.attachCustomKeyEventHandler(ev => handleKey(pane, ev));
+  term.registerLinkProvider(linkProvider(term));
   return pane;
 }
 
@@ -989,6 +1103,15 @@ function scheduleFit(pane: Pane): void {
     const view = readingPosition(pane);
     pane.fit.fit();
     restoreReadingPosition(pane, view);
+    // `term.onResize` solo avisa cuando xterm cambia de tamaño, y hay caminos
+    // (restauración en curso, panel aún sin medir) en los que xterm ya se
+    // ajustó sin publicarlo: el pty se queda con otras filas. Mientras ambos
+    // están quietos no se nota, pero al primer resize que sí llega ConPTY
+    // repinta su viewport con posicionamiento absoluto y la línea de entrada
+    // de PSReadLine aparece varias filas por debajo del prompt. Publicar el
+    // tamaño real tras cada ajuste cierra ese hueco; si no cambia nada, el
+    // `resize()` del servidor lo ignora y no manda SIGWINCH.
+    post({ type: 'resize', termId: pane.termId, cols: pane.term.cols, rows: pane.term.rows });
   }, FIT_DELAY_MS);
 }
 

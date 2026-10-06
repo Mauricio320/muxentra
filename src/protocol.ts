@@ -175,6 +175,8 @@ export type WebviewMessage =
   | { type: 'kill'; termId: string }
   | { type: 'layout'; layout: WorkspaceLayout }
   | { type: 'copy'; text: string }
+  /** Enlace que el usuario abrió con Ctrl/Cmd + clic en una terminal. */
+  | { type: 'openLink'; url: string }
   | { type: 'refreshUsage' }
   /** Activa o silencia los avisos de Muxentra desde la barra del panel. */
   | { type: 'setNotifications'; enabled: boolean }
