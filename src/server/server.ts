@@ -11,6 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { IPty } from 'node-pty';
 import type { ResumeAgent } from '../protocol';
+import { agentHomes } from '../agentHomes';
+import type { TerminalLaunch } from '../claudeSession';
 import { TerminalState } from './terminalState';
 import {
   HANDSHAKE_TIMEOUT_MS,
@@ -38,6 +40,7 @@ const SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const SESSION_VERSION = 1;
 
 interface Term {
+  launch: TerminalLaunch;
   proc: IPty;
   state: TerminalState;
   pendingData?: { chunks: string[] };
@@ -348,6 +351,7 @@ class Conn {
       alive: [...terms.keys()],
       exited: [...exitedWithoutOwner],
       stateReplay: true,
+      profileSwitch: true,
     });
     exitedWithoutOwner.clear();
   }
@@ -385,8 +389,8 @@ function handleAuthed(conn: Conn, msg: ClientMessage): void {
         if (msg.scrollback !== undefined) term.state.configure(msg.scrollback);
         const snapshot = term.state.snapshot();
         conn.send(conn.stateReplay
-          ? { t: 'attached', id: msg.id, found: true, snapshot }
-          : { t: 'attached', id: msg.id, found: true, data: snapshot.data });
+          ? { t: 'attached', id: msg.id, found: true, snapshot, launch: term.launch }
+          : { t: 'attached', id: msg.id, found: true, data: snapshot.data, launch: term.launch });
         term.owner = conn;
         if (!conn.stateReplay) resize(term, msg.cols, msg.rows);
       }).catch(err => log(`snapshot ${msg.id}: ${String(err)}`));
@@ -438,24 +442,44 @@ function validSpawn(msg: Extract<ClientMessage, { t: 'spawn' }>): boolean {
   if (typeof msg.cwd !== 'string') return false;
   if (!Array.isArray(msg.args) || msg.args.some(a => typeof a !== 'string')) return false;
   if (!msg.env || typeof msg.env !== 'object' || Array.isArray(msg.env)) return false;
+  if (msg.resumeSource && (typeof msg.resumeSource.sessionId !== 'string' ||
+    !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(msg.resumeSource.sessionId) ||
+    typeof msg.resumeSource.transcript !== 'string' || !path.isAbsolute(msg.resumeSource.transcript))) return false;
   return Object.values(msg.env).every(v => typeof v === 'string');
 }
 
-function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
+function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>, preserved?: SavedSession): void {
   if (!validSpawn(msg)) {
     log('spawn con datos inválidos');
+    return;
+  }
+  const previous = terms.get(msg.id);
+  if (msg.preserveHistory && previous) {
+    if (previous.owner !== conn) {
+      conn.send({ t: 'spawnError', id: msg.id, message: 'La terminal pertenece a otra ventana.', preserved: true });
+      return;
+    }
+    previous.pendingData = undefined;
+    void previous.state.run(() => {
+      if (terms.get(msg.id) !== previous || previous.owner !== conn || conn.sock.destroyed) return;
+      const snapshot = previous.state.historySnapshot();
+      spawn(conn, { ...msg, preserveHistory: false }, {
+        version: SESSION_VERSION, savedAt: Date.now(), ...snapshot,
+      });
+    });
     return;
   }
   // Leer el historial antes de kill(), porque kill() borra el archivo de sesión.
   // Si esta terminal dejó historial en disco, el shell nuevo nace con el tamaño
   // de entonces para que las líneas guardadas no se partan al volver; el cliente
   // lo ajusta después, como en cualquier reconexión.
-  const saved = loadSession(msg.id);
-  kill(msg.id);
+  const saved = preserved ?? loadSession(msg.id);
+  if (!preserved) kill(msg.id);
   const cols = saved ? saved.cols : size(msg.cols, 80, 2);
   const rows = saved ? saved.rows : size(msg.rows, 24, 1);
   let proc: IPty;
   const useConptyDll = process.platform === 'win32' && msg.useConptyDll !== false;
+  const startedAt = Date.now();
   try {
     const pty = require('node-pty') as typeof import('node-pty');
     proc = pty.spawn(msg.file, msg.args, {
@@ -469,9 +493,11 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log(`spawn ${msg.id} falló: ${message}`);
-    conn.send({ t: 'spawnError', id: msg.id, message });
+    conn.send({ t: 'spawnError', id: msg.id, message, preserved: !!preserved });
     return;
   }
+  // A failed replacement leaves the old process and its history intact.
+  if (preserved) kill(msg.id);
   const state = new TerminalState({
     cols, rows,
     ...(process.platform === 'win32' ? {
@@ -480,7 +506,10 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
       windowsPty: { backend: 'conpty' as const, buildNumber: useConptyDll ? 22621 : Number(os.release().split('.')[2]) },
     } : {}),
   }, msg.scrollback);
-  const term: Term = { proc, state, owner: conn, cols, rows, dirty: false, line: '', escape: 0 };
+  const homes = agentHomes(msg.env, msg.cwd);
+  const launch: TerminalLaunch = { pid: proc.pid, startedAt, file: msg.file, claudeHome: homes.claude, claudeConfigFile: homes.claudeConfigFile,
+    resumeSource: msg.resumeSource };
+  const term: Term = { proc, state, launch, owner: conn, cols, rows, dirty: false, line: '', escape: 0 };
   terms.set(msg.id, term);
   exitedWithoutOwner.delete(msg.id);
   log(`spawn ${msg.id}: pid ${proc.pid} ${msg.file} ${msg.args.join(' ')}${saved ? ' (revive historial)' : ''}`);
@@ -490,10 +519,10 @@ function spawn(conn: Conn, msg: Extract<ClientMessage, { t: 'spawn' }>): void {
     void state.run(async () => {
       await state.write(saved.data + sessionDivider(saved.savedAt));
       term.dirty = true;
-      conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, geometry: state.geometry, snapshot: state.snapshot(), resume: saved.resume });
+      conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, launch, geometry: state.geometry, snapshot: state.snapshot(), resume: saved.resume });
     }).catch(err => log(`revive ${msg.id}: ${String(err)}`));
   } else {
-    conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, geometry: state.geometry });
+    conn.send({ t: 'spawned', id: msg.id, pid: proc.pid, launch, geometry: state.geometry });
   }
 
   proc.onData(data => {

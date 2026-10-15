@@ -82,6 +82,9 @@ export class GitController {
   private selectedRef = '';
   private selectedCommit = '';
   private requestId = 0;
+  private disposed = false;
+  private refreshInFlight?: { root: string; ref: string; promise: Promise<void> };
+  private detailRequest?: { root: string; hash: string; promise: Promise<GitCommitDetail> };
 
   constructor(
     private readonly ctx: vscode.ExtensionContext,
@@ -90,7 +93,10 @@ export class GitController {
     private readonly isVisible: () => boolean,
   ) {
     this.selectedRoot = ctx.workspaceState.get<string>(SELECTED_REPO_KEY) ?? '';
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refresh(), undefined, this.disposables);
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      this.refreshInFlight = undefined;
+      void this.refresh();
+    }, undefined, this.disposables);
     this.refreshTimer = setInterval(() => { if (this.isVisible()) void this.refresh(); }, 15_000);
   }
 
@@ -139,7 +145,21 @@ export class GitController {
     }
   }
 
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    const pending = this.refreshInFlight;
+    if (pending?.root === this.selectedRoot && pending.ref === this.selectedRef) return pending.promise;
+    const promise = this.refreshSnapshot();
+    const current = { root: this.selectedRoot, ref: this.selectedRef, promise };
+    this.refreshInFlight = current;
+    const clear = (): void => {
+      if (this.refreshInFlight === current) this.refreshInFlight = undefined;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  private async refreshSnapshot(): Promise<void> {
     const request = ++this.requestId;
     this.repositories = discoverGitRepositories(workspaceRoots());
     if (!this.repositories.length) {
@@ -170,8 +190,21 @@ export class GitController {
 
   private async loadDetail(hash: string): Promise<void> {
     const root = this.selectedRoot;
-    const detail = await this.git.commit(root, hash);
-    if (root === this.selectedRoot && hash === this.selectedCommit) this.post({ type: 'detail', detail });
+    const detail = await this.commitDetail(root, hash);
+    if (!this.disposed && root === this.selectedRoot && hash === this.selectedCommit) this.post({ type: 'detail', detail });
+  }
+
+  /** Un commit es inmutable; conservar solo el último detalle acota la memoria. */
+  private commitDetail(root: string, hash: string): Promise<GitCommitDetail> {
+    const cached = this.detailRequest;
+    if (cached?.root === root && cached.hash === hash) return cached.promise;
+    const promise = this.git.commit(root, hash);
+    const current = { root, hash, promise };
+    this.detailRequest = current;
+    void promise.catch(() => {
+      if (this.detailRequest === current) this.detailRequest = undefined;
+    });
+    return promise;
   }
 
   private avatarConsentKey(root: string): string {
@@ -239,7 +272,9 @@ export class GitController {
 
   private async openCommitDiff(hash: string, file: string): Promise<void> {
     if (!this.snapshot?.commits.some(commit => commit.hash === hash)) return;
-    const detail = await this.git.commit(this.selectedRoot, hash);
+    const root = this.selectedRoot;
+    const detail = await this.commitDetail(root, hash);
+    if (this.disposed || root !== this.selectedRoot) return;
     const changed = detail.files.find(item => item.path === file);
     if (!changed) return;
     const previous = detail.parents[0];
@@ -266,7 +301,10 @@ export class GitController {
   }
 
   dispose(): void {
+    this.disposed = true;
     ++this.requestId;
+    this.refreshInFlight = undefined;
+    this.detailRequest = undefined;
     clearInterval(this.refreshTimer);
     for (const disposable of this.disposables.splice(0)) disposable.dispose();
   }

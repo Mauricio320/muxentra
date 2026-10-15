@@ -1,5 +1,4 @@
 // Tipos compartidos entre el extension host y el webview.
-import type { FocusAction, FocusPhase, FocusSound, FocusTimerState } from './focusTimer';
 import type { GitHostMessage, GitViewMessage } from './gitPanel';
 
 export type SplitDir = 'row' | 'col';
@@ -53,17 +52,16 @@ export interface TerminalSnapshot extends TerminalGeometry {
 /** Agente que corría en una terminal cuando se guardó su historial en disco. */
 export type ResumeAgent = 'claude' | 'codex';
 
+export interface ProfileSwitchStatus {
+  state: 'waiting' | 'switching' | 'ready' | 'error';
+  message: string;
+  blockInput?: boolean;
+}
+
 export interface TermSettings {
   /** Fuente efectiva: la propia de Muxentra si está puesta, si no la heredada. */
   fontFamily: string;
   fontSize: number;
-  /** Valor de muxentra.fontFamily; vacío cuando se hereda de VS Code. */
-  customFontFamily: string;
-  /** La que se usaría sin ajuste propio: terminal.integrated.fontFamily o editor.fontFamily. */
-  inheritedFontFamily: string;
-  /** Valor de muxentra.fontSize; 0 cuando se hereda. */
-  customFontSize: number;
-  inheritedFontSize: number;
   letterSpacing: number;
   lineHeight: number;
   fontWeight: TerminalFontWeight;
@@ -180,9 +178,6 @@ export type WebviewMessage =
   | { type: 'refreshUsage' }
   /** Activa o silencia los avisos de Muxentra desde la barra del panel. */
   | { type: 'setNotifications'; enabled: boolean }
-  /** Fuente elegida en el panel. Familia vacía o tamaño 0 vuelven a la de VS Code; ausente no toca ese valor. */
-  | { type: 'setFont'; fontFamily?: string; fontSize?: number }
-  | { type: 'focusTimer'; action: FocusAction; workMinutes?: number; breakMinutes?: number; sound?: FocusSound }
   /** Directorio que reportó el shell (OSC 7, OSC 9;9 o el título). */
   | { type: 'cwd'; termId: string; cwd: string }
   /**
@@ -194,6 +189,7 @@ export type WebviewMessage =
 
 /** Mensajes que envía el extension host al webview. */
 export type HostMessage =
+  | { type: 'profileSwitch'; termId: string; status: ProfileSwitchStatus }
   | {
       type: 'init';
       layout: WorkspaceLayout | null;
@@ -204,7 +200,6 @@ export type HostMessage =
       exited: string[];
       showUsage: boolean;
       showGit: boolean;
-      focusTimer: FocusTimerState;
     }
   | { type: 'data'; termId: string; data: string }
   /** `resume` llega cuando el historial viene del disco y un agente estaba corriendo. */
@@ -216,7 +211,6 @@ export type HostMessage =
   | { type: 'serverLost' }
   | { type: 'settings'; settings: TermSettings }
   | { type: 'usage'; usage: UsageSnapshot | null; showUsage: boolean }
-  | { type: 'focusTimer'; timer: FocusTimerState; now: number; completedPhase?: FocusPhase }
   /** Rama de la terminal; branch null cuando el directorio no está en un repositorio. */
   | { type: 'branch'; termId: string; branch: string | null; detached: boolean; cwd: string | null }
   | { type: 'command'; command: MuxentraCommand; arg?: string }

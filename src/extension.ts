@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { saveClipboardImage } from './clipboardImage';
 import { installClaudeUsage } from './claudeUsageSetup';
+import { currentAgentHomes } from './environment';
 import { GitExplorer } from './gitExplorer';
 import { registerGitDocumentProvider } from './gitPanel';
 import { log } from './log';
 import { MuxentraPanel } from './panel';
+import { registerPanelRecovery } from './panelRecovery';
 import type { MuxentraCommand } from './protocol';
 import { PtyClient } from './ptyClient';
 
@@ -31,7 +33,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
   // Los shells viven en un servidor aparte: al desactivar solo se corta la conexión.
   const ptys = new PtyClient(ctx);
-  ctx.subscriptions.push({ dispose: () => ptys.dispose() });
+  ctx.subscriptions.push({ dispose: () => { MuxentraPanel.suspend(); ptys.dispose(); } });
   const git = new GitExplorer(vscode.workspace.getConfiguration('git').get<string>('path') || 'git');
   registerGitDocumentProvider(ctx, git);
   const openMuxentra = (): void => {
@@ -47,6 +49,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
       }),
     );
   }
+  registerPanelRecovery(ctx, () => MuxentraPanel.isOpen(), (column, preserveFocus) => {
+    MuxentraPanel.createOrShow(ctx, ptys, git, false, { viewColumn: column, preserveFocus });
+  });
   // Migra las pestañas Git de versiones anteriores al panel unificado.
   ctx.subscriptions.push(vscode.window.registerWebviewPanelSerializer('muxentraGit', {
     async deserializeWebviewPanel(panel: vscode.WebviewPanel) {
@@ -66,7 +71,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
   register('muxentra.connectClaudeUsage', () => {
     try {
-      installClaudeUsage(ctx.extensionPath);
+      installClaudeUsage(ctx.extensionPath, currentAgentHomes().claude);
       void vscode.window.showInformationMessage('Muxentra: uso de Claude conectado. Se actualizará cuando Claude reciba su próxima respuesta.');
     } catch (err) {
       void vscode.window.showErrorMessage(`Muxentra: ${err instanceof Error ? err.message : String(err)}`);

@@ -2,10 +2,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import type { EnvironmentOverrides } from './environment';
 
 export interface ShellSpec {
   path: string;
   args: string[];
+  env?: EnvironmentOverrides;
 }
 
 /**
@@ -24,7 +26,7 @@ export function resolveShell(): ShellSpec {
 
 type PlatformKey = 'windows' | 'osx' | 'linux';
 
-function platformKey(): PlatformKey {
+export function platformKey(): PlatformKey {
   if (process.platform === 'win32') return 'windows';
   if (process.platform === 'darwin') return 'osx';
   return 'linux';
@@ -34,6 +36,7 @@ interface ProfileLike {
   path?: string | string[];
   args?: string | string[];
   source?: string;
+  env?: EnvironmentOverrides;
 }
 
 function fromVsCodeProfile(): ShellSpec | undefined {
@@ -48,12 +51,16 @@ function fromVsCodeProfile(): ShellSpec | undefined {
     if (profile.path) {
       const candidates = Array.isArray(profile.path) ? profile.path : [profile.path];
       const found = candidates.map(String).find(isExecutable);
-      if (found) return { path: found, args: toArgs(profile.args) };
+      if (found) return { path: found, args: toArgs(profile.args), env: profile.env };
     }
-    if (profile.source) return fromSource(profile.source, toArgs(profile.args));
+    if (profile.source) {
+      const shell = fromSource(profile.source, toArgs(profile.args));
+      if (shell) return { ...shell, env: profile.env };
+    }
   }
   // Perfiles integrados de VS Code que no aparecen en profiles.<plataforma>.
-  return fromSource(name, []);
+  const shell = fromSource(name, []);
+  return shell ? { ...shell, env: profile?.env } : undefined;
 }
 
 function fromSource(source: string, args: string[]): ShellSpec | undefined {

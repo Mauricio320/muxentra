@@ -179,6 +179,36 @@ try {
   assert.equal(codex.windows[1].stale, true);
   assert.equal(codex.updatedAt, now);
   console.log('PASS: first fresh Codex event replaces prior usage despite a partial trailing line');
+
+  const priorClaudeDir = process.env.CLAUDE_CONFIG_DIR;
+  const priorCodexDir = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = homes.codex;
+    for (const [profile, percentage] of [['pdv', 17], ['personal', 43]]) {
+      const profileDir = path.join(root, profile);
+      process.env.CLAUDE_CONFIG_DIR = profileDir;
+      save(path.join(profileDir, '.credentials.json'), { claudeAiOauth: { accessToken: `fixture-${profile}` } });
+      save(path.join(profileDir, '.claude.json'), { cachedUsageUtilization: {
+        fetchedAtMs: now, utilization: { five_hour: { utilization: percentage, resets_at: new Date(now + 3600000).toISOString() } },
+      } });
+      assert.equal(readUsage().items[0].windows[0].percent, percentage / 100);
+      await fetchClaudeUsage(undefined, async (_url, options) => {
+        assert.equal(options.headers.Authorization, `Bearer fixture-${profile}`);
+        return { ok: false };
+      });
+      installClaudeUsage(process.cwd(), undefined, process.execPath);
+      assert.ok(fs.existsSync(path.join(profileDir, 'muxentra-statusline.cjs')));
+    }
+    process.env.CLAUDE_CONFIG_DIR = path.join(root, 'not-logged-in');
+    assert.equal(readUsage().items[0].windows.length, 0, 'an empty profile never falls back to another account');
+    assert.equal(await fetchClaudeUsage(undefined, () => { throw new Error('must not request without credentials'); }), undefined);
+  } finally {
+    if (priorClaudeDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = priorClaudeDir;
+    if (priorCodexDir === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = priorCodexDir;
+  }
+  console.log('PASS: two profiles keep quota, credential reads and status-line setup isolated; empty profiles stay empty');
 } finally {
   const target = fs.realpathSync(root);
   assert.equal(path.dirname(target), fs.realpathSync(os.tmpdir()));

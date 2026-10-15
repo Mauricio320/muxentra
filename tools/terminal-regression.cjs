@@ -175,6 +175,28 @@ async function serverChecks() {
     assert.ok(replay.buffer.active.length <= 530);
     replay.dispose();
     console.log('PASS: explicit resize and configured history limit apply in order');
+    const oldPid = resized.launch.pid;
+    assert.equal(resized.launch.claudeHome, path.join(os.homedir(), '.claude'));
+    send({ t: 'spawn', id: 'fixture', file: path.join(dir, 'missing.exe'), args: [], cwd: process.cwd(),
+      env: { ...process.env }, cols: 100, rows: 30, preserveHistory: true });
+    const failed = await waitFor(m => m.t === 'spawnError');
+    assert.equal(failed.preserved, true);
+    send({ t: 'attach', id: 'fixture', cols: 100, rows: 30 });
+    assert.equal((await waitFor(m => m.t === 'attached')).launch.pid, oldPid, 'failed replacement preserves the old process');
+    const otherWindow = await openClient(pipe, token);
+    otherWindow.send({ t: 'spawn', id: 'fixture', file: process.execPath, args: [], cwd: process.cwd(),
+      env: { ...process.env }, cols: 100, rows: 30, preserveHistory: true });
+    assert.equal((await otherWindow.waitUntil(m => m.t === 'spawnError')).preserved, true, 'another window cannot replace this pane');
+    otherWindow.socket.end();
+    const profileHome = path.join(dir, 'other-account');
+    send({ t: 'spawn', id: 'fixture', file: process.execPath, args: [path.resolve('tools/fixtures/static-output.cjs')],
+      cwd: process.cwd(), env: { ...process.env, CLAUDE_CONFIG_DIR: profileHome }, cols: 100, rows: 30, preserveHistory: true });
+    const replaced = await waitFor(m => m.t === 'spawned' && m.pid !== oldPid);
+    assert.notEqual(replaced.pid, oldPid);
+    assert.equal(replaced.launch.claudeHome, profileHome);
+    assert.equal(replaced.resume, undefined, 'automatic resume never injects a generic continue command');
+    assert.ok(replaced.snapshot.data.includes('PTY-ROW-999'), 'same pane keeps its prior output');
+    console.log('PASS: same-pane account replacement preserves output and rolls back spawn failures');
   } finally {
     if (socket && !socket.destroyed) {
       send({ t: 'input', id: 'fixture', data: '\x03' });

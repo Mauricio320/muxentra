@@ -30,6 +30,11 @@ const server = await esbuild.context({
   logLevel: 'info',
 });
 
+const claudeResume = await esbuild.context({
+  entryPoints: ['src/claudeResume.ts'], bundle: true, platform: 'node', format: 'cjs',
+  target: 'node20', outfile: 'dist/claudeResume.js', sourcemap: !production, minify: production, logLevel: 'info',
+});
+
 const webview = await esbuild.context({
   entryPoints: ['src/webview/main.ts'],
   bundle: true,
@@ -67,8 +72,8 @@ if (production) {
 }
 
 if (watch) {
-  await Promise.all([extension.watch(), server.watch(), webview.watch(), gitView.watch(), gitPreview?.watch()]);
+  await Promise.all([extension.watch(), server.watch(), claudeResume.watch(), webview.watch(), gitView.watch(), gitPreview?.watch()]);
 } else {
-  await Promise.all([extension.rebuild(), server.rebuild(), webview.rebuild(), gitView.rebuild(), gitPreview?.rebuild()]);
-  await Promise.all([extension.dispose(), server.dispose(), webview.dispose(), gitView.dispose(), gitPreview?.dispose()]);
+  await Promise.all([extension.rebuild(), server.rebuild(), claudeResume.rebuild(), webview.rebuild(), gitView.rebuild(), gitPreview?.rebuild()]);
+  await Promise.all([extension.dispose(), server.dispose(), claudeResume.dispose(), webview.dispose(), gitView.dispose(), gitPreview?.dispose()]);
 }

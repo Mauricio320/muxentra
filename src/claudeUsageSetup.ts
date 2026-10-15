@@ -1,9 +1,9 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
+import { agentHomes } from './agentHomes';
 
 /** Explicit setup only: preserve the existing command and every other setting. */
-export function installClaudeUsage(extensionRoot: string, home = path.join(os.homedir(), '.claude'), node = 'node'): void {
+export function installClaudeUsage(extensionRoot: string, home = agentHomes().claude, node = 'node'): void {
   const settingsFile = path.join(home, 'settings.json');
   const original = fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, 'utf8') : undefined;
   const settings = original ? JSON.parse(original) : {};

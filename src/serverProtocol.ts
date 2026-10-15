@@ -9,6 +9,7 @@
 
 import * as crypto from 'crypto';
 import type { ResumeAgent, TerminalGeometry, TerminalSnapshot } from './protocol';
+import type { TerminalLaunch } from './claudeSession';
 
 export const PROTOCOL_VERSION = 2;
 
@@ -33,6 +34,8 @@ export type ClientMessage =
       rows: number;
       scrollback?: number;
       useConptyDll?: boolean;
+      preserveHistory?: boolean;
+      resumeSource?: TerminalLaunch['resumeSource'];
     }
   | { t: 'attach'; id: string; cols: number; rows: number; scrollback?: number }
   | { t: 'configure'; id: string; scrollback: number }
@@ -44,16 +47,16 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { t: 'challenge'; version: number; nonce: string; proof: string }
-  | { t: 'welcome'; ok: boolean; alive: string[]; exited: string[]; error?: string; stateReplay?: boolean }
+  | { t: 'welcome'; ok: boolean; alive: string[]; exited: string[]; error?: string; stateReplay?: boolean; profileSwitch?: boolean }
   /**
    * `snapshot` y `resume` solo vienen cuando la terminal revive de un snapshot
    * guardado en disco (el servidor anterior murió, p. ej. al apagar el PC): el
    * historial va delante de la salida del shell nuevo, y `resume` dice qué
    * agente estaba corriendo para dejarle escrito su comando de continuar.
    */
-  | { t: 'spawned'; id: string; pid: number; geometry?: TerminalGeometry; snapshot?: TerminalSnapshot; resume?: ResumeAgent }
-  | { t: 'spawnError'; id: string; message: string }
-  | { t: 'attached'; id: string; found: boolean; data?: string; snapshot?: TerminalSnapshot }
+  | { t: 'spawned'; id: string; pid: number; launch?: TerminalLaunch; geometry?: TerminalGeometry; snapshot?: TerminalSnapshot; resume?: ResumeAgent }
+  | { t: 'spawnError'; id: string; message: string; preserved?: boolean }
+  | { t: 'attached'; id: string; found: boolean; launch?: TerminalLaunch; data?: string; snapshot?: TerminalSnapshot }
   | { t: 'data'; id: string; data: string }
   | { t: 'exit'; id: string; code: number };
 

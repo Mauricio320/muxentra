@@ -46,7 +46,7 @@
     };
     window.acquireVsCodeApi = () => ({ postMessage(message) {
       if (message.type === 'ready') {
-        setTimeout(() => window.postMessage({ type: 'init', layout: null, settings, alive: [], exited: [], showUsage: true, showGit: !preview.has('no-git'), focusTimer: { enabled: true, running: true, phase: 'work', workMinutes: 25, breakMinutes: 5, sound: 'subtle', remainingMs: 1500000, endsAt: Date.now() + 1500000 } }, '*'), 100);
+        setTimeout(() => window.postMessage({ type: 'init', layout: null, settings, alive: [], exited: [], showUsage: true, showGit: !preview.has('no-git') }, '*'), 100);
       }
       if (message.type === 'git' && message.message.type === 'ready') {
         setTimeout(() => window.postMessage({ type: 'git', message: { type: 'snapshot', snapshot: gitSnapshot } }, '*'), preview.has('slow') ? 2400 : 180);
@@ -82,20 +82,8 @@
     <div id="content" inert></div>
     <div id="git-view" data-style-uri="../../dist/gitView.css" hidden inert></div>
     <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
-    <div id="focus-popover" role="dialog" aria-label="Temporizador de enfoque" hidden>
-      <div class="focus-popover-heading"><strong>Temporizador de enfoque</strong><span>Trabajo y descanso</span></div>
-      <form id="focus-form">
-        <label for="focus-work">Trabajo <span>minutos</span></label><input id="focus-work" type="number" min="1" max="180" step="1" required>
-        <label for="focus-break">Descanso <span>minutos</span></label><input id="focus-break" type="number" min="1" max="180" step="1" required>
-        <div class="focus-sound"><label for="focus-sound">Sonido al terminar</label><div class="focus-sound-controls"><select id="focus-sound"><option value="subtle">Sutil</option><option value="warm">Cálida</option><option value="long">Prolongada</option></select><button id="focus-preview" type="button">Probar</button></div></div>
-        <button id="focus-save" type="submit">Iniciar</button>
-      </form>
-      <p id="focus-hint"></p>
-      <div id="focus-actions" hidden><button id="focus-toggle" type="button">Pausar</button><button id="focus-skip" type="button">Saltar fase</button><button id="focus-stop" type="button">Desactivar</button></div>
-    </div>
     <div id="bottom-bar" hidden inert>
       <div id="usage" hidden></div>
-      <div id="focus" hidden><button id="focus-status" type="button"><span id="focus-phase"></span><strong id="focus-time"></strong></button><button id="focus-pause" type="button"></button></div>
     </div>
     <div id="boot" class="boot">
     <div class="boot-ambient" aria-hidden="true"><i></i><i></i></div>

@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -266,12 +266,12 @@
         "muxentra.fontFamily": {
           "type": "string",
           "default": "",
-          "description": "Fuente de las terminales. Vacío: usa terminal.integrated.fontFamily o editor.fontFamily. El botón Aa de la barra del panel la cambia desde ahí; Fira Code y JetBrains Mono vienen incluidas."
+          "description": "Fuente de las terminales. Vacío: usa terminal.integrated.fontFamily o editor.fontFamily. Fira Code y JetBrains Mono vienen incluidas."
         },
         "muxentra.fontSize": {
           "type": "number",
           "default": 0,
-          "description": "Tamaño de fuente. 0: usa terminal.integrated.fontSize o editor.fontSize. También se ajusta desde el botón Aa de la barra."
+          "description": "Tamaño de fuente. 0: usa terminal.integrated.fontSize o editor.fontSize."
         },
         "muxentra.scrollback": {
           "type": "number",
@@ -374,11 +374,15 @@
     "typecheck": "tsc --noEmit -p ./",
     "test:terminal": "node tools/terminal-regression.cjs",
     "test:git": "node tools/gitExplorer-regression.cjs",
+    "test:panel": "node tools/panel-regression.cjs",
+    "test:recovery": "node tools/panelRecovery-regression.cjs",
+    "test:profile-switch": "node tools/profileSwitch-regression.cjs",
+    "test:webview": "node tools/webview-settings-regression.cjs",
+    "test:environment": "node tools/environment-regression.cjs",
     "test:gitlab": "node tools/gitlabAvatars-regression.cjs",
     "test:usage": "node tools/usage-regression.cjs",
     "test:usage-reset": "node --experimental-strip-types tools/usageReset-regression.mjs",
     "test:links": "node --experimental-strip-types tools/links-regression.mjs",
-    "test:focus": "node --experimental-strip-types tools/focusTimer-regression.mjs",
     "package": "vsce package"
   },
   "dependencies": {

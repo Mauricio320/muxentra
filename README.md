@@ -83,11 +83,11 @@ Reload the window afterwards, and close any Muxentra terminal still open if you 
 
 ### After installing
 
-Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.15.1 build appears as `mauriciotriana.muxentra@0.15.1`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
+Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`. To check which build you have, run `code --list-extensions --show-versions` (a locally installed 0.17.0 build appears as `mauriciotriana.muxentra@0.17.0`); to remove it, run `code --uninstall-extension mauriciotriana.muxentra`.
 
 ## First steps
 
-1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right, on the terminal tab you were using last, with the cursor in its terminal. Git is one click away: the Git button beside the timer and bell, or "Muxentra: Abrir Git". Once open, the icon-only Git tab sits first in the tab bar and the next/previous tab shortcuts include it. The toolbar button is disabled while Git is selected. `muxentra.openGitOnOpen` puts the Git tab there from the start.
+1. `Ctrl+Alt+T` opens one Muxentra editor panel in its own group on the right, on the terminal tab you were using last, with the cursor in its terminal. Git is one click away: the Git button beside the bell, or "Muxentra: Abrir Git". Once open, the icon-only Git tab sits first in the tab bar and the next/previous tab shortcuts include it. The toolbar button is disabled while Git is selected. `muxentra.openGitOnOpen` puts the Git tab there from the start.
    On open, a one-second greeting draws the fluid M and then flies it into its slot in the tab bar while the workspace reveals underneath. It lasts exactly as long as the stroke takes and leaves the moment the active tab's terminals answer; Git loads on its own and never holds the workspace back. Any key or click dismisses it at once. Only if a terminal is slow does a progress line appear with what it is waiting for, and after three seconds an "Entrar ahora" button. With reduced motion there is no drawing and no minimum: the mark shows still and the workspace appears as soon as it is ready. `muxentra.openingAnimation` turns the greeting off entirely.
 2. Split it: `Ctrl+\` to the right, `Ctrl+Shift+\` downwards. Drag the dividers to share out the space, or run "Muxentra: Igualar tamaño de terminales" from the command palette.
 3. `Ctrl+Shift+T` opens another tab. Drag terminal tabs to reorder them; their positions are saved with the workspace. `F2` renames a tab, right-click colours it, and `Shift+F2` renames the focused terminal.
@@ -119,7 +119,7 @@ The usage bar currently supports **Claude Code and Codex**. OpenCode runs in its
 
 ### A workspace in focus
 
-The interface uses restrained lavender and blue accents, soft borders and rounded terminal surfaces that follow your VS Code theme. Tabs scroll independently from the always-visible add, Git, focus and notification controls. Git shares the same visual identity, with a repository overview, framed navigation and compact 34px commit rows. Short transitions give feedback when opening controls or changing views; terminal output stays still while you work. Keyboard focus and reduced motion are supported throughout.
+The interface uses restrained lavender and blue accents, soft borders and rounded terminal surfaces that follow your VS Code theme. Tabs scroll independently from the always-visible add, Git and notification controls. Git shares the same visual identity, with a repository overview, framed navigation and compact 34px commit rows. Short transitions give feedback when opening controls or changing views; terminal output stays still while you work. Keyboard focus and reduced motion are supported throughout.
 
 ![Muxentra opening sequence with the fluid M, light orbits and loading indicators](docs/premium-opening.png)
 
@@ -142,8 +142,6 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 - Every tab can be given a colour (right-click the tab) so you can find it at a glance.
 - Every terminal shows what it is up to: a pulsing blue dot while it works, a green "listo" label when it finishes, an orange "atención" one when the program is asking for something. The dot is repeated on the tab, the number of waiting terminals appears in the panel title and in the VS Code status bar, and a notification offers to take you there. Built for having four agents running and knowing which one needs you.
 - A compact bottom bar with Claude Code and OpenAI Codex usage: each provider card keeps all limit percentages and shows a reset countdown beside the matching percentage, on the same line. It prioritizes the current five-hour reset, falling back to the weekly reset when no current five-hour timestamp is available. Missing, expired or stale schedules show a dash with a "Reinicio pendiente" tooltip. Countdowns update every 30 seconds without polling providers or moving keyboard focus. Hover the countdown for the exact reset date and time, click a card for details, or use the refresh button to update usage.
-- A font picker behind the Aa button: Fira Code and JetBrains Mono ship inside the extension (SIL Open Font License, see `assets/fonts/`), so they work even on a machine with nothing installed, and any monospace or Nerd Font you have installed shows up next to them, each previewed in its own glyphs. A Nerd Font makes prompt icons (starship, oh-my-posh, powerlevel10k) render. Ligatures are not drawn: the accelerated WebGL renderer works per cell.
-- A work/break timer: click the clock beside the tab bar, choose the minutes (20/5 by default) and start. The active countdown appears beside usage at the bottom, with pause/resume; click it to change durations, choose and preview one of three chimes (about 0.6, 1.1 or 1.8 seconds), skip a phase or turn it off. The selected sound is saved. Work and break alternate automatically; the chime plays at phase changes while the panel is visible, and the timer keeps time across panel and window reloads.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
 - `Ctrl+V` (`Cmd+V` on macOS) pastes images too: when the clipboard holds an image and no text, the image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent. `Ctrl+Alt+V` (`Cmd+Alt+V`) does the same even when the clipboard also carries text.
 - Links in the output open in your browser with `Ctrl` + left click (`Cmd` + click on macOS), the same gesture as the integrated terminal. Hovering one underlines it; the hand cursor appears once the key is down, so a plain click still selects text as before. It finds `http://` and `https://` addresses, bare `www.` ones and the `OSC 8` hyperlinks that tools like `gh` or `npm` emit, and it follows a URL that wrapped across several lines. Only http and https are opened: `file://`, `vscode://` and the like are ignored on both sides of the webview.
@@ -208,7 +206,7 @@ Worth knowing:
 ## Settings
 
 - `muxentra.shellPath` and `muxentra.shellArgs`: an explicit shell. Empty means your default VS Code profile.
-- `muxentra.fontFamily` and `muxentra.fontSize`: when empty they come from `terminal.integrated.*` or `editor.*`. The Aa button in the panel's tab bar sets them without opening the settings editor: pick a font, step the size, or go back to VS Code's. It writes to your user settings (or the workspace, when the value already lives there), so the choice follows you to every window and survives reloads.
+- `muxentra.fontFamily` and `muxentra.fontSize`: optional overrides in VS Code settings. When empty or zero, Muxentra inherits `terminal.integrated.*` or `editor.*`. Existing preferences and the bundled Fira Code and JetBrains Mono fonts remain supported.
 - `muxentra.scrollback`: lines of history per terminal. Defaults to 20000, enough to hold a whole Codex transcript.
 - `muxentra.rebuildAwareScrollback`: use the modern ConPTY bundled with node-pty on Windows. This preserves TUI erase, positioning and alternate-screen sequences that the Windows 10 backend can rewrite incorrectly. On by default; changes apply to new terminals. Turning it off selects the system backend. Output volume never triggers history deletion.
 - `muxentra.showUsage`: show or hide the bottom usage bar.
@@ -227,6 +225,20 @@ Worth knowing:
 - `muxentra.multiLinePasteWarning`: ask for confirmation before pasting multi-line text. On by default.
 
 `muxentra.shellPath` and `muxentra.shellArgs` have `machine` scope: they are set per machine or per user, and a repository cannot change them from its `.vscode/settings.json`.
+
+### VS Code profiles and Claude accounts
+
+New Muxentra terminals use the active VS Code profile's environment. Overrides apply in this order: the extension host environment, `terminal.integrated.env.<platform>`, the selected terminal profile's `env`, then `claudeCode.environmentVariables`. Terminal environment entries set to `null` remove inherited variables. `${env:NAME}`, `${userHome}` and `${workspaceFolder}` substitutions are supported.
+
+For a separate Claude account, set `CLAUDE_CONFIG_DIR` in `claudeCode.environmentVariables` in that VS Code profile's user settings, as for the official Claude extension. Muxentra uses the same directory for new terminals, Claude usage and the explicit **Connect Claude usage** command. The default profile continues using its own configuration. This follows [Claude's multiple-account setup](https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts).
+
+When the active profile changes its Claude configuration directory, Muxentra can resume an existing Claude conversation under the new account in the same pane. It identifies the exact native Claude process through its terminal's process tree and Claude's local session registry, waits for Claude to become idle, checks that the destination account is signed in, then relaunches with `--resume <absolute-transcript-path>`. The pane ID, dimensions and saved terminal output are retained. Once Claude exits, an interactive shell opens with the new profile environment. Credentials are never copied, and Muxentra never chooses a conversation by “most recent”.
+
+Automatic switching requires a recent native Claude CLI that writes its interactive session registry (validated with 2.1.300) and a terminal server from this version. Node-based CLI entrypoints, missing or ambiguous session metadata, and unsigned-in destination accounts leave the original process running and show a notice in the pane header. Claude can still ask you to trust the project under the new account; Muxentra does not answer that prompt. A busy conversation waits until Claude reports that it is idle. Other terminal programs keep their original environment. The usage bar follows the active configuration and discards pending readings from a previous configuration.
+
+After upgrading, an already-running terminal server keeps its old code. Muxentra shows a notice instead of killing its terminals to upgrade it. Finish and close those sessions first; restart that server when they are no longer needed, then load the new extension. Reloading only the extension does not upgrade a persistent server.
+
+If switching profiles restarts the extension host but leaves a disconnected Muxentra editor visible, Muxentra recreates that editor and reconnects the saved terminals before checking their Claude accounts. Normal window restoration takes priority, and hidden panels wait until they become visible.
 
 ## If something goes wrong
 
@@ -285,11 +297,15 @@ npm run watch        # rebuilds on save
 npm run typecheck    # tsc --noEmit
 npm run test:terminal # scrollback, replay, resize and revive after a server death, against a real pty
 npm run test:git    # repositories, branches, commits, diffs and worktrees
+npm run test:panel  # shared Git requests, branch polling, cache and disposal
+npm run test:recovery # disconnected webviews after a profile/extension-host restart
+npm run test:profile-switch # exact Claude session, profile transitions, waiting, auth failures and launcher
+npm run test:webview # settings, font loading races and terminal geometry
+npm run test:environment # VS Code profile environments and account isolation
 npm run test:gitlab # GitLab author portraits and matching
 npm run test:usage   # quota sources, precedence and the statusLine bridge
 npm run test:usage-reset # five-hour reset priority, weekly fallback and unavailable schedules
 npm run test:links   # link detection, trailing punctuation and non-http schemes
-npm run test:focus   # work/break timer transitions and persistence
 npm run package      # produces the .vsix
 ```
 

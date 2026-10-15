@@ -2,7 +2,9 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { advanceFocusTimer, changeFocusTimer, completedFocusPhase, restoreFocusTimer, type FocusTimerState } from './focusTimer';
+import type { AgentHomes } from './agentHomes';
+import { currentAgentHomes } from './environment';
+import { ClaudeProfileSwitch } from './claudeProfileSwitch';
 import { normalizeCwd, readGitInfo } from './git';
 import { GitExplorer } from './gitExplorer';
 import { GitController } from './gitPanel';
@@ -23,14 +25,14 @@ import { fetchClaudeUsage, readUsage } from './usage';
 
 const LAYOUT_KEY = 'muxentra.layout';
 const LAST_NOTIFY_MODE_KEY = 'muxentra.lastNotifyMode';
-const FOCUS_TIMER_KEY = 'muxentra.focusTimer';
 
 export class MuxentraPanel {
   static readonly viewType = 'muxentra';
   static readonly legacyViewType = 'orcaTerminals';
   private static current: MuxentraPanel | undefined;
 
-  static createOrShow(ctx: vscode.ExtensionContext, ptys: PtyClient, git: GitExplorer, openGit = false): void {
+  static createOrShow(ctx: vscode.ExtensionContext, ptys: PtyClient, git: GitExplorer, openGit = false,
+    showOptions: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus: boolean } = vscode.ViewColumn.Beside): void {
     if (MuxentraPanel.current) {
       MuxentraPanel.current.panel.reveal(undefined, false);
       if (openGit) MuxentraPanel.current.openGit();
@@ -39,7 +41,7 @@ export class MuxentraPanel {
     const panel = vscode.window.createWebviewPanel(
       MuxentraPanel.viewType,
       'Muxentra',
-      vscode.ViewColumn.Beside,
+      showOptions,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -48,7 +50,7 @@ export class MuxentraPanel {
     );
     MuxentraPanel.current = new MuxentraPanel(panel, ctx, ptys, git, openGit);
     // El panel acaba de tomar el foco, así que su grupo es el activo.
-    MuxentraPanel.current.lockGroup();
+    if (panel.active) MuxentraPanel.current.lockGroup();
   }
 
   static revive(panel: vscode.WebviewPanel, ctx: vscode.ExtensionContext, ptys: PtyClient, git: GitExplorer): void {
@@ -70,6 +72,8 @@ export class MuxentraPanel {
   static isOpen(): boolean {
     return MuxentraPanel.current !== undefined;
   }
+
+  static suspend(): void { MuxentraPanel.current?.profileSwitch.dispose(); }
 
   /** Cuántas terminales están esperando al usuario ahora mismo. */
   static pendingCount(): number {
@@ -94,9 +98,8 @@ export class MuxentraPanel {
   private claudeLive: UsageItem | undefined;
   private claudeLivePending = false;
   private claudeLiveAttemptAt = 0;
+  private usageHomes: AgentHomes | undefined;
   private branchTimer: NodeJS.Timeout | undefined;
-  private focusTick: NodeJS.Timeout | undefined;
-  private focusTimer: FocusTimerState;
   /** Directorio actual y última rama enviada, por terminal. */
   private readonly cwds = new Map<string, string>();
   private readonly branches = new Map<string, string>();
@@ -104,6 +107,8 @@ export class MuxentraPanel {
   private readonly activity = new Map<string, { state: PaneActivity; label: string }>();
   private readonly statusItem: vscode.StatusBarItem;
   private readonly gitController: GitController;
+  private readonly profileSwitch: ClaudeProfileSwitch;
+  private readonly terminalSizes = new Map<string, { cols: number; rows: number }>();
   private locked = false;
   private webviewReady = false;
   private pendingOpenGit: boolean;
@@ -117,7 +122,9 @@ export class MuxentraPanel {
     openGit = false,
   ) {
     this.pendingOpenGit = openGit;
-    this.focusTimer = restoreFocusTimer(ctx.globalState.get(FOCUS_TIMER_KEY), Date.now());
+    this.profileSwitch = new ClaudeProfileSwitch(ptys,
+      id => this.terminalSizes.get(id) ?? { cols: 80, rows: 24 },
+      (termId, status) => this.post({ type: 'profileSwitch', termId, status }));
     panel.title = 'Muxentra';
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'assets', 'muxentra-icon.png');
     this.statusItem = vscode.window.createStatusBarItem('muxentra.attention', vscode.StatusBarAlignment.Left, 90);
@@ -154,11 +161,16 @@ export class MuxentraPanel {
           e.affectsConfiguration('editor.fontFamily') ||
           e.affectsConfiguration('editor.fontSize')
         ) {
-          this.post({ type: 'settings', settings: currentSettings() });
-          this.ptys.configure(currentSettings().scrollback);
+          const settings = currentSettings();
+          this.post({ type: 'settings', settings });
+          if (e.affectsConfiguration('muxentra.scrollback')) this.ptys.configure(settings.scrollback);
         }
-        if (e.affectsConfiguration('muxentra.showUsage') || e.affectsConfiguration('muxentra.usageRefreshSeconds')) {
+        if (e.affectsConfiguration('muxentra.showUsage') || e.affectsConfiguration('muxentra.usageRefreshSeconds') ||
+          e.affectsConfiguration('claudeCode.environmentVariables') || e.affectsConfiguration('terminal.integrated.env') ||
+          e.affectsConfiguration('terminal.integrated.profiles') || e.affectsConfiguration('terminal.integrated.defaultProfile') ||
+          e.affectsConfiguration('muxentra.shellPath')) {
           this.restartUsageTimer();
+          this.profileSwitch.changed();
         }
       },
       undefined,
@@ -166,11 +178,16 @@ export class MuxentraPanel {
     );
 
     ptys.attach({
+      onLaunch: id => this.profileSwitch.track(id),
       onData: (termId, data) => {
         if (this.receiving.has(termId)) this.enqueue(termId, data);
       },
-      onGeometry: (termId, geometry) => this.post({ type: 'geometry', termId, geometry }),
+      onGeometry: (termId, geometry) => {
+        this.terminalSizes.set(termId, geometry);
+        this.post({ type: 'geometry', termId, geometry });
+      },
       onExit: (termId, code) => {
+        this.profileSwitch.forget(termId);
         this.flush();
         this.clearActivity(termId);
         this.post({ type: 'exit', termId, code });
@@ -207,26 +224,6 @@ export class MuxentraPanel {
     this.branchTimer = setInterval(() => {
       if (this.panel.visible) this.refreshBranches(false);
     }, 5000);
-    this.focusTick = setInterval(() => this.tickFocusTimer(), 1000);
-  }
-
-  private tickFocusTimer(): void {
-    const now = Date.now();
-    const previous = this.focusTimer;
-    const next = advanceFocusTimer(previous, now);
-    const completedPhase = completedFocusPhase(previous, next, now);
-    if (next !== this.focusTimer) {
-      this.focusTimer = next;
-      void this.ctx.globalState.update(FOCUS_TIMER_KEY, next);
-    }
-    if ((this.panel.visible && this.focusTimer.enabled) || completedPhase) {
-      this.post({
-        type: 'focusTimer',
-        timer: this.focusTimer,
-        now,
-        completedPhase: completedPhase ?? undefined,
-      });
-    }
   }
 
   // ------------------------------------------------------------------ bloqueo del grupo
@@ -251,28 +248,23 @@ export class MuxentraPanel {
     const cwd = normalizeCwd(raw);
     if (!cwd || this.cwds.get(termId) === cwd) return;
     this.cwds.set(termId, cwd);
-    this.sendBranch(termId, cwd, true);
+    if (branchEnabled()) this.sendBranch(termId, cwd, true, readGitInfo(cwd));
   }
 
   private refreshBranches(force: boolean): void {
     if (!branchEnabled()) return;
-    for (const [termId, cwd] of this.cwds) this.sendBranch(termId, cwd, force);
+    const readings = new Map<string, ReturnType<typeof readGitInfo>>();
+    for (const [termId, cwd] of this.cwds) {
+      if (!readings.has(cwd)) readings.set(cwd, readGitInfo(cwd));
+      this.sendBranch(termId, cwd, force, readings.get(cwd));
+    }
   }
 
   /** Envía la rama solo cuando cambia, salvo que se fuerce. */
-  private sendBranch(termId: string, cwd: string, force: boolean): void {
+  private sendBranch(termId: string, cwd: string, force: boolean, info: ReturnType<typeof readGitInfo>): void {
     if (!branchEnabled()) return;
-    let branch: string | null = null;
-    let detached = false;
-    try {
-      const info = readGitInfo(cwd);
-      if (info) {
-        branch = info.branch;
-        detached = info.detached;
-      }
-    } catch {
-      branch = null;
-    }
+    const branch = info?.branch ?? null;
+    const detached = info?.detached ?? false;
     const key = `${branch ?? ''}|${detached}|${cwd}`;
     if (!force && this.branches.get(termId) === key) return;
     this.branches.set(termId, key);
@@ -390,15 +382,24 @@ export class MuxentraPanel {
       return;
     }
     try {
-      this.post({ type: 'usage', usage: readUsage(undefined, this.claudeLive), showUsage: true });
-      if (this.panel.visible) void this.refreshClaudeLive(manual);
+      const resolved = currentAgentHomes();
+      if (resolved.claude !== this.usageHomes?.claude || resolved.codex !== this.usageHomes?.codex ||
+        resolved.claudeConfigFile !== this.usageHomes?.claudeConfigFile) {
+        this.usageHomes = resolved;
+        this.claudeLive = undefined;
+        this.claudeLivePending = false;
+        this.claudeLiveAttemptAt = 0;
+      }
+      const homes = this.usageHomes!;
+      this.post({ type: 'usage', usage: readUsage(homes, this.claudeLive), showUsage: true });
+      if (this.panel.visible) void this.refreshClaudeLive(manual, homes);
     } catch (err) {
       log().warn(`no se pudo leer el uso: ${err instanceof Error ? err.message : String(err)}`);
       this.post({ type: 'usage', usage: null, showUsage: true });
     }
   }
 
-  private async refreshClaudeLive(manual: boolean): Promise<void> {
+  private async refreshClaudeLive(manual: boolean, homes: AgentHomes): Promise<void> {
     const now = Date.now();
     // Claude también consulta esta cuota. Evitar peticiones por cada salida de
     // terminal y dejar un intervalo menor solo para el botón de actualizar.
@@ -407,12 +408,12 @@ export class MuxentraPanel {
     this.claudeLiveAttemptAt = now;
     this.claudeLivePending = true;
     try {
-      const live = await fetchClaudeUsage();
-      if (!live || MuxentraPanel.current !== this || !usageEnabled()) return;
+      const live = await fetchClaudeUsage(homes.claude);
+      if (!live || MuxentraPanel.current !== this || !usageEnabled() || this.usageHomes !== homes) return;
       this.claudeLive = live;
-      this.post({ type: 'usage', usage: readUsage(undefined, live), showUsage: true });
+      this.post({ type: 'usage', usage: readUsage(homes, live), showUsage: true });
     } finally {
-      this.claudeLivePending = false;
+      if (this.usageHomes === homes) this.claudeLivePending = false;
     }
   }
 
@@ -457,7 +458,6 @@ export class MuxentraPanel {
           showUsage: usageEnabled(),
           // El panel abre en la última pestaña de terminales; Git solo si el usuario lo pide.
           showGit: vscode.workspace.getConfiguration('muxentra').get<boolean>('openGitOnOpen', false) || this.pendingOpenGit,
-          focusTimer: this.focusTimer,
         });
         this.webviewReady = true;
         if (this.pendingOpenGit) {
@@ -468,11 +468,13 @@ export class MuxentraPanel {
         break;
       }
       case 'spawn':
+        this.terminalSizes.set(m.termId, { cols: m.cols, rows: m.rows });
         await this.spawn(m.termId, m.cols, m.rows);
         // Arranca en la carpeta del workspace; el shell avisará si cambia.
         this.setCwd(m.termId, workingDirectory());
         break;
       case 'attach':
+        this.terminalSizes.set(m.termId, { cols: m.cols, rows: m.rows });
         this.receiving.delete(m.termId);
         this.pending.delete(m.termId);
         if (!this.cwds.has(m.termId)) this.setCwd(m.termId, workingDirectory());
@@ -485,13 +487,17 @@ export class MuxentraPanel {
         }
         break;
       case 'input':
+        if (!this.profileSwitch.acceptsInput(m.termId)) break;
         this.ptys.write(m.termId, m.data);
         if (/[\r\n]/.test(m.data)) this.refreshUsageSoon();
         break;
       case 'resize':
+        this.terminalSizes.set(m.termId, { cols: m.cols, rows: m.rows });
         this.ptys.resize(m.termId, m.cols, m.rows);
         break;
       case 'kill':
+        this.profileSwitch.forget(m.termId);
+        this.terminalSizes.delete(m.termId);
         this.receiving.delete(m.termId);
         this.ptys.kill(m.termId);
         this.cwds.delete(m.termId);
@@ -520,38 +526,6 @@ export class MuxentraPanel {
       case 'setNotifications':
         await this.setNotifications(m.enabled);
         break;
-      case 'setFont':
-        await this.setFont(m.fontFamily, m.fontSize);
-        break;
-      case 'focusTimer':
-        this.focusTimer = changeFocusTimer(this.focusTimer, m.action, Date.now(), m.workMinutes, m.breakMinutes, m.sound);
-        await this.ctx.globalState.update(FOCUS_TIMER_KEY, this.focusTimer);
-        this.post({ type: 'focusTimer', timer: this.focusTimer, now: Date.now() });
-        break;
-    }
-  }
-
-  /**
-   * Guarda la fuente elegida en el panel en los ajustes de Muxentra, así vale
-   * para todas las ventanas y sobrevive a reinicios. El valor llega del webview,
-   * así que se valida como cualquier otra entrada externa.
-   */
-  private async setFont(fontFamily: unknown, fontSize: unknown): Promise<void> {
-    const cfg = vscode.workspace.getConfiguration('muxentra');
-    const target = (key: string): vscode.ConfigurationTarget =>
-      cfg.inspect(key)?.workspaceValue === undefined ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace;
-    if (typeof fontFamily === 'string') {
-      const family = fontFamily.trim();
-      if (family.length > 120 || !/^[\p{L}\p{N}\s,'".\-_]*$/u.test(family)) {
-        void vscode.window.showWarningMessage('Muxentra: el nombre de la fuente tiene caracteres que no se admiten.');
-        return;
-      }
-      await cfg.update('fontFamily', family, target('fontFamily'));
-      log().info(`fuente: ${family || 'la de VS Code'}`);
-    }
-    if (typeof fontSize === 'number' && Number.isFinite(fontSize)) {
-      const size = fontSize <= 0 ? 0 : Math.min(40, Math.max(6, Math.round(fontSize)));
-      await cfg.update('fontSize', size, target('fontSize'));
     }
   }
 
@@ -621,6 +595,7 @@ export class MuxentraPanel {
   }
 
   private dispose(): void {
+    this.profileSwitch.dispose();
     log().info(`panel cerrado; ${this.ptys.aliveIds().length} terminales siguen vivas`);
     MuxentraPanel.current = undefined;
     if (this.usageTimer) clearInterval(this.usageTimer);
@@ -629,8 +604,6 @@ export class MuxentraPanel {
     this.usageRefreshTimer = undefined;
     if (this.branchTimer) clearInterval(this.branchTimer);
     this.branchTimer = undefined;
-    if (this.focusTick) clearInterval(this.focusTick);
-    this.focusTick = undefined;
     this.ptys.detach();
     this.gitController.dispose();
     this.pending.clear();
@@ -679,55 +652,8 @@ export class MuxentraPanel {
     <div id="content"${gate}></div>
     <div id="git-view" data-style-uri="${gitStyle}" hidden${gate}></div>
     <div id="usage-popover" role="region" aria-label="Detalle de consumo" hidden></div>
-    <div id="focus-popover" role="dialog" aria-label="Temporizador de enfoque" hidden>
-      <div class="focus-popover-heading"><strong>Temporizador de enfoque</strong><span>Trabajo y descanso</span></div>
-      <form id="focus-form">
-        <label for="focus-work">Trabajo <span>minutos</span></label>
-        <input id="focus-work" type="number" min="1" max="180" step="1" required>
-        <label for="focus-break">Descanso <span>minutos</span></label>
-        <input id="focus-break" type="number" min="1" max="180" step="1" required>
-        <div class="focus-sound">
-          <label for="focus-sound">Sonido al terminar</label>
-          <div class="focus-sound-controls">
-            <select id="focus-sound">
-              <option value="subtle">Sutil · 0,6 s</option>
-              <option value="warm">Cálida · 1,1 s</option>
-              <option value="long">Prolongada · 1,8 s</option>
-            </select>
-            <button id="focus-preview" type="button">Probar</button>
-          </div>
-        </div>
-        <button id="focus-save" type="submit">Iniciar</button>
-      </form>
-      <p id="focus-hint"></p>
-      <div id="focus-actions" hidden>
-        <button id="focus-toggle" type="button">Pausar</button>
-        <button id="focus-skip" type="button">Saltar fase</button>
-        <button id="focus-stop" type="button">Desactivar</button>
-      </div>
-    </div>
-    <div id="font-popover" role="dialog" aria-label="Tipografía de la terminal" hidden>
-      <div class="font-popover-heading"><strong>Tipografía</strong><span>Se guarda en tus ajustes</span></div>
-      <div id="font-list" role="listbox" aria-label="Fuentes disponibles"></div>
-      <form id="font-custom-form">
-        <input id="font-custom" type="text" placeholder="Otra familia instalada, p. ej. Hack Nerd Font Mono" autocomplete="off" spellcheck="false" maxlength="120">
-        <button id="font-custom-apply" type="submit">Usar</button>
-      </form>
-      <div class="font-size-row">
-        <span>Tamaño</span>
-        <button id="font-size-minus" type="button" aria-label="Reducir tamaño">−</button>
-        <strong id="font-size-value" aria-live="polite">14</strong>
-        <button id="font-size-plus" type="button" aria-label="Aumentar tamaño">+</button>
-        <button id="font-reset" type="button">Igual que VS Code</button>
-      </div>
-      <p id="font-hint">Con una Nerd Font se ven los iconos del prompt. Las ligaduras no se dibujan con el renderizador acelerado.</p>
-    </div>
     <div id="bottom-bar" hidden${gate}>
       <div id="usage" hidden></div>
-      <div id="focus" hidden>
-        <button id="focus-status" type="button" aria-label="Ver temporizador de enfoque" aria-controls="focus-popover" aria-expanded="false"><span id="focus-phase"></span><strong id="focus-time"></strong></button>
-        <button id="focus-pause" type="button" aria-label="Pausar temporizador"></button>
-      </div>
     </div>
     ${opening ? bootScreen() : ''}
   </div>
@@ -752,10 +678,6 @@ export function currentSettings(): TermSettings {
   return {
     fontFamily,
     fontSize,
-    customFontFamily,
-    inheritedFontFamily,
-    customFontSize,
-    inheritedFontSize,
     letterSpacing: term.get<number>('letterSpacing') ?? 0,
     lineHeight: Math.max(1, term.get<number>('lineHeight') ?? 1),
     fontWeight: terminalFontWeight(term.get<string>('fontWeight'), 'normal'),

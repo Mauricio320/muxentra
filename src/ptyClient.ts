@@ -17,9 +17,13 @@ import {
   type ServerMessage,
 } from './serverProtocol';
 import { resolveShell } from './shell';
+import { buildTerminalEnv } from './environment';
+import { agentHomes } from './agentHomes';
+import type { ClaudeSession, TerminalLaunch } from './claudeSession';
 import type { ResumeAgent, TerminalGeometry, TerminalSnapshot } from './protocol';
 
 export interface PtyListeners {
+  onLaunch?: (id: string, launch: TerminalLaunch | undefined) => void;
   onData?: (id: string, data: string) => void;
   onExit?: (id: string, code: number) => void;
   onAttached?: (id: string, found: boolean, data: string | undefined, snapshot?: TerminalSnapshot) => void;
@@ -56,14 +60,21 @@ export class PtyClient {
   private listeners: PtyListeners = {};
   private disposed = false;
   private stateReplay = false;
+  private profileSwitch = false;
   private readonly pipePath: string;
   private readonly tokenFile: string;
   private readonly token: string;
+  private readonly launches = new Map<string, TerminalLaunch>();
+  private readonly pendingLaunches = new Map<string, Omit<TerminalLaunch, 'pid'>>();
+  private readonly replacements = new Map<string, { resolve: () => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
 
   constructor(private readonly ctx: vscode.ExtensionContext) {
     this.tokenFile = path.join(ctx.globalStorageUri.fsPath, 'server-token');
     this.token = loadToken(this.tokenFile);
     this.pipePath = pipePathFor(this.token);
+    for (const [id, launch] of Object.entries(ctx.workspaceState.get<Record<string, TerminalLaunch>>('muxentra.launches') ?? {})) {
+      this.launches.set(id, launch);
+    }
   }
 
   attach(listeners: PtyListeners): void {
@@ -82,6 +93,8 @@ export class PtyClient {
     return this.stateReplay;
   }
 
+  supportsProfileSwitch(): boolean { return this.profileSwitch; }
+
   configure(scrollback: number): void {
     if (!this.stateReplay) return;
     for (const id of this.alive) this.send({ t: 'configure', id, scrollback });
@@ -95,6 +108,7 @@ export class PtyClient {
 
   /** Garantiza una conexión con el servidor, lanzándolo si no existe. */
   ready(): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('El host de extensiones se cerró.'));
     if (this.sock && !this.sock.destroyed) return Promise.resolve();
     if (!this.connecting) {
       this.connecting = this.connect().finally(() => {
@@ -111,10 +125,61 @@ export class PtyClient {
     log().info(`spawn ${id}: "${shell.path}" ${shell.args.join(' ')} (${cols}x${rows}) en ${cwd}`);
     this.alive.add(id);
     const config = vscode.workspace.getConfiguration('muxentra');
-    this.send({ t: 'spawn', id, file: shell.path, args: shell.args, cwd, env: buildEnv(), cols, rows,
+    const env = buildTerminalEnv(shell.env, cwd);
+    this.prepareLaunch(id, shell.path, env, cwd);
+    this.send({ t: 'spawn', id, file: shell.path, args: shell.args, cwd, env, cols, rows,
       scrollback: config.get<number>('scrollback') ?? 20000,
       useConptyDll: config.get<boolean>('rebuildAwareScrollback') ?? true,
     });
+  }
+
+  launchInfo(id: string): TerminalLaunch | undefined { return this.launches.get(id); }
+
+  /** Replace only this pane, keeping its ID and restoring the exact transcript. */
+  async restartClaude(id: string, session: ClaudeSession, env: Record<string, string>, cols: number, rows: number,
+    stillCurrent: () => boolean = () => true): Promise<void> {
+    await this.ready();
+    if (this.disposed || !this.alive.has(id) || !stillCurrent()) throw new Error('El cambio de perfil ya no está vigente.');
+    if (!this.profileSwitch) throw new Error('El cambio de cuenta necesita reiniciar el servidor de terminales de la versión anterior.');
+    const shell = resolveShell();
+    const script = path.join(this.ctx.extensionPath, 'dist', 'claudeResume.js');
+    if (!fs.existsSync(script)) throw new Error('Falta compilar el lanzador de Claude.');
+    const config = vscode.workspace.getConfiguration('muxentra');
+    const resumeSource = { sessionId: session.sessionId, transcript: session.transcript };
+    this.prepareLaunch(id, process.execPath, env, session.cwd, resumeSource);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.replacements.delete(id);
+        reject(new Error('El servidor no confirmó la reanudación de Claude.'));
+      }, 15000);
+      this.replacements.set(id, { resolve, reject, timer });
+      this.send({ t: 'spawn', id, file: process.execPath,
+        args: [script, session.executable, session.transcript, shell.path, JSON.stringify(shell.args)],
+        cwd: session.cwd, env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, cols, rows, preserveHistory: true, resumeSource,
+        scrollback: config.get<number>('scrollback') ?? 20000,
+        useConptyDll: config.get<boolean>('rebuildAwareScrollback') ?? true });
+    });
+  }
+
+  private prepareLaunch(id: string, file: string, env: Record<string, string>, cwd: string, resumeSource?: TerminalLaunch['resumeSource']): void {
+    const homes = agentHomes(env, cwd);
+    this.pendingLaunches.set(id, { file, startedAt: Date.now(), claudeHome: homes.claude, claudeConfigFile: homes.claudeConfigFile, resumeSource });
+  }
+
+  private rememberLaunch(id: string, launch?: TerminalLaunch, pid?: number): void {
+    const pending = this.pendingLaunches.get(id);
+    if (!launch && pid && pending) launch = { ...pending, pid };
+    if (launch) {
+      this.launches.set(id, launch);
+      this.pendingLaunches.delete(id);
+      this.saveLaunches();
+    }
+    this.listeners.onLaunch?.(id, this.launches.get(id));
+  }
+
+  private saveLaunches(): void {
+    void this.ctx.workspaceState.update('muxentra.launches', Object.fromEntries(this.launches)).then(undefined,
+      () => log().warn('no se pudo guardar la referencia de las terminales'));
   }
 
   async attachTerminal(id: string, cols: number, rows: number): Promise<void> {
@@ -133,6 +198,9 @@ export class PtyClient {
   }
 
   kill(id: string): void {
+    this.launches.delete(id);
+    this.pendingLaunches.delete(id);
+    this.saveLaunches();
     this.alive.delete(id);
     log().info(`kill ${id}`);
     this.send({ t: 'kill', id });
@@ -150,6 +218,11 @@ export class PtyClient {
     this.listeners = {};
     this.sock?.end();
     this.sock = undefined;
+    for (const pending of this.replacements.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('El host de extensiones se cerró.'));
+    }
+    this.replacements.clear();
   }
 
   // ------------------------------------------------------------------ interno
@@ -166,9 +239,11 @@ export class PtyClient {
     let spawned = false;
     let lastError = '';
     for (let attempt = 0; attempt < CONNECT_ATTEMPTS; attempt++) {
+      if (this.disposed) throw new Error('El host de extensiones se cerró.');
       try {
         const sock = await this.tryConnect();
         const { welcome, version } = await this.handshake(sock);
+        if (this.disposed) { sock.destroy(); throw new Error('El host de extensiones se cerró.'); }
         if (version !== PROTOCOL_VERSION) {
           log().warn(`servidor con protocolo ${version} (esperado ${PROTOCOL_VERSION}); se reinicia`);
           sock.write(JSON.stringify({ t: 'shutdown' } satisfies ClientMessage) + '\n');
@@ -304,6 +379,7 @@ export class PtyClient {
   private adopt(sock: net.Socket, welcome: Extract<ServerMessage, { t: 'welcome' }>): void {
     this.sock = sock;
     this.stateReplay = welcome.stateReplay === true;
+    this.profileSwitch = welcome.profileSwitch === true;
     this.alive.clear();
     for (const id of welcome.alive) this.alive.add(id);
     for (const id of welcome.exited) this.exitedWhileDetached.add(id);
@@ -345,6 +421,8 @@ export class PtyClient {
         this.listeners.onData?.(msg.id, msg.data);
         break;
       case 'exit':
+        this.launches.delete(msg.id);
+        this.saveLaunches();
         this.alive.delete(msg.id);
         log().info(`exit ${msg.id}: código ${msg.code}`);
         if (this.listeners.onExit) this.listeners.onExit(msg.id, msg.code);
@@ -355,15 +433,26 @@ export class PtyClient {
         log().info(`spawned ${msg.id}: pid ${msg.pid}${msg.snapshot ? ` con historial recuperado${msg.resume ? ` (${msg.resume})` : ''}` : ''}`);
         if (msg.snapshot) this.listeners.onRevived?.(msg.id, msg.snapshot, msg.resume);
         if (msg.geometry) this.listeners.onGeometry?.(msg.id, msg.geometry);
+        this.rememberLaunch(msg.id, msg.launch, msg.pid);
+        {
+          const pending = this.replacements.get(msg.id);
+          if (pending) { clearTimeout(pending.timer); this.replacements.delete(msg.id); pending.resolve(); }
+        }
         break;
       case 'spawnError':
-        this.alive.delete(msg.id);
+        this.pendingLaunches.delete(msg.id);
+        {
+          const pending = this.replacements.get(msg.id);
+          if (pending) { clearTimeout(pending.timer); this.replacements.delete(msg.id); pending.reject(new Error(msg.message)); }
+        }
+        if (!msg.preserved) this.alive.delete(msg.id);
         log().error(`spawn ${msg.id} falló: ${msg.message}`);
         this.listeners.onSpawnError?.(msg.id, msg.message);
         break;
       case 'attached':
         if (!msg.found) this.alive.delete(msg.id);
         this.listeners.onAttached?.(msg.id, msg.found, msg.data, msg.snapshot);
+        if (msg.found) this.rememberLaunch(msg.id, msg.launch);
         break;
       case 'challenge':
       case 'welcome':
@@ -469,21 +558,4 @@ function delay(ms: number): Promise<void> {
 export function workingDirectory(): string {
   const folder = vscode.workspace.workspaceFolders?.[0];
   return folder && folder.uri.scheme === 'file' ? folder.uri.fsPath : os.homedir();
-}
-
-/** Variables internas del extension host que no deben llegar al shell (igual que hace la terminal de VS Code). */
-function isInternalVar(key: string): boolean {
-  if (key === 'ELECTRON_RUN_AS_NODE' || key === 'ELECTRON_NO_ATTACH_CONSOLE') return true;
-  return key.startsWith('VSCODE_') && !key.startsWith('VSCODE_GIT_');
-}
-
-function buildEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !isInternalVar(key)) env[key] = value;
-  }
-  env.TERM = 'xterm-256color';
-  env.COLORTERM = 'truecolor';
-  env.TERM_PROGRAM = 'muxentra';
-  return env;
 }

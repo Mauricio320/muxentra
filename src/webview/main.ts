@@ -6,7 +6,6 @@ import './styles.css';
 import { brandMark } from '../brand';
 import { formatReset, preferredUsageReset } from './usageReset';
 import { findLinks, linkUrl } from './links';
-import { defaultFocusTimer, validFocusSound, type FocusPhase, type FocusSound, type FocusTimerState } from '../focusTimer';
 import { mountGitView } from '../gitView/main';
 import type {
   HostMessage,
@@ -102,6 +101,7 @@ interface Pane {
   /** Comando que se deja escrito en el prompt nuevo para retomar al agente; Enter lo lanza. */
   prefill?: string;
   prefillTimer?: number;
+  profileSwitching?: boolean;
 }
 
 const ICONS = {
@@ -128,12 +128,6 @@ const ICONS = {
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M4.4 6.3a3.6 3.6 0 0 1 6.2-2.5 3.6 3.6 0 0 1 1 2.5c0 3 1.2 4 1.2 4H6.7M6.9 12.1a1.3 1.3 0 0 0 2.2 0"/></svg>',
   timer:
     '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.2v3.6l2.2 1.3M6.2 1.5h3.6"/></svg>',
-  font:
-    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 12.5 5.4 3.2l3.6 9.3M3 9.4h4.8M14.2 12.5V8.6c0-1.1-.8-1.8-2-1.8-1 0-1.7.4-2.1 1M14.2 10.3c-.6-.3-1.4-.4-2.1-.2-.9.2-1.5.7-1.5 1.4 0 .8.7 1.2 1.6 1.2.9 0 1.6-.4 2-1"/></svg>',
-  pause:
-    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3v10M10.5 3v10"/></svg>',
-  play:
-    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 8 5-8 5z"/></svg>',
 };
 
 /** Paleta de colores para marcar pestañas. */
@@ -171,10 +165,6 @@ let settings: TermSettings = {
   attentionSound: false,
   notificationsEnabled: true,
   openingAnimation: true,
-  customFontFamily: '',
-  inheritedFontFamily: 'monospace',
-  customFontSize: 0,
-  inheritedFontSize: 14,
 };
 let theme: ITheme = buildTheme();
 
@@ -187,31 +177,6 @@ let gitActive = false;
 const usageEl = document.getElementById('usage') as HTMLElement;
 const usagePopoverEl = document.getElementById('usage-popover') as HTMLElement;
 const bottomBarEl = document.getElementById('bottom-bar') as HTMLElement;
-const focusEl = document.getElementById('focus') as HTMLElement;
-const focusStatusEl = document.getElementById('focus-status') as HTMLButtonElement;
-const focusPhaseEl = document.getElementById('focus-phase') as HTMLElement;
-const focusTimeEl = document.getElementById('focus-time') as HTMLElement;
-const focusPauseEl = document.getElementById('focus-pause') as HTMLButtonElement;
-const focusPopoverEl = document.getElementById('focus-popover') as HTMLElement;
-const focusFormEl = document.getElementById('focus-form') as HTMLFormElement;
-const focusWorkEl = document.getElementById('focus-work') as HTMLInputElement;
-const focusBreakEl = document.getElementById('focus-break') as HTMLInputElement;
-const focusSoundEl = document.getElementById('focus-sound') as HTMLSelectElement;
-const focusSaveEl = document.getElementById('focus-save') as HTMLButtonElement;
-const focusHintEl = document.getElementById('focus-hint') as HTMLElement;
-const focusPreviewEl = document.getElementById('focus-preview') as HTMLButtonElement;
-const focusActionsEl = document.getElementById('focus-actions') as HTMLElement;
-const focusToggleEl = document.getElementById('focus-toggle') as HTMLButtonElement;
-const focusSkipEl = document.getElementById('focus-skip') as HTMLButtonElement;
-const focusStopEl = document.getElementById('focus-stop') as HTMLButtonElement;
-const fontPopoverEl = document.getElementById('font-popover') as HTMLElement;
-const fontListEl = document.getElementById('font-list') as HTMLElement;
-const fontCustomFormEl = document.getElementById('font-custom-form') as HTMLFormElement;
-const fontCustomEl = document.getElementById('font-custom') as HTMLInputElement;
-const fontSizeValueEl = document.getElementById('font-size-value') as HTMLElement;
-const fontSizeMinusEl = document.getElementById('font-size-minus') as HTMLButtonElement;
-const fontSizePlusEl = document.getElementById('font-size-plus') as HTMLButtonElement;
-const fontResetEl = document.getElementById('font-reset') as HTMLButtonElement;
 // ---------------------------------------------------------------- apertura
 //
 // Un saludo, no una puerta. Dura lo que tarda la M en dibujarse y se va en
@@ -226,8 +191,6 @@ const bootProgressEl = document.getElementById('boot-progress-fill');
 const bootLoadingEl = document.getElementById('boot-loading');
 const bootSkipEl = document.getElementById('boot-skip');
 const bootMarkEl = document.getElementById('boot-mark');
-let focusTimer = defaultFocusTimer();
-let focusPopoverOpen = false;
 let bootInitialized = false;
 let bootDismissed = bootEl === null;
 let bootDrawn = false;
@@ -351,15 +314,11 @@ function persist(): void {
 
 // ---------------------------------------------------------------- tema y opciones
 
-function cssVar(name: string): string | undefined {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || undefined;
-}
-
 function buildTheme(): ITheme {
+  const style = getComputedStyle(document.documentElement);
   const pick = (names: string[], fallback: string): string => {
     for (const name of names) {
-      const value = cssVar(name);
+      const value = style.getPropertyValue(name).trim();
       if (value) return value;
     }
     return fallback;
@@ -421,8 +380,15 @@ function applyTheme(): void {
   for (const pane of panes.values()) pane.term.options.theme = theme;
 }
 
+let fontLoadKey = '';
+let fontLoad: Promise<unknown> = Promise.resolve();
+const terminalSettingKeys = [
+  'fontFamily', 'fontSize', 'letterSpacing', 'lineHeight', 'fontWeight', 'fontWeightBold', 'scrollback', 'cursorBlink',
+] as const;
+
 async function applySettings(next: TermSettings): Promise<void> {
   const wasEnabled = settings.agentStatus;
+  const notificationsChanged = settings.notificationsEnabled !== next.notificationsEnabled;
   settings = next;
   if (wasEnabled && !next.agentStatus) {
     for (const pane of panes.values()) {
@@ -431,25 +397,28 @@ async function applySettings(next: TermSettings): Promise<void> {
       setActivity(pane, 'idle');
     }
   }
-  try {
-    await document.fonts.load(`${next.fontWeight} ${next.fontSize}px ${next.fontFamily}`, '█▄▀');
-    await document.fonts.ready;
-  } catch {
-    // Si la fuente no expone FontFace, xterm conserva la alternativa del sistema.
+  if (notificationsChanged) renderTabBar();
+  const fontKey = `${next.fontWeight} ${next.fontSize}px ${next.fontFamily}`;
+  if (fontKey !== fontLoadKey) {
+    fontLoadKey = fontKey;
+    fontLoad = Promise.resolve().then(() => document.fonts.load(fontKey, '█▄▀'))
+      .then(() => document.fonts.ready)
+      .catch(() => undefined);
   }
+  await fontLoad;
+  // Otra configuración puede llegar mientras se carga una fuente.
+  if (settings !== next) return;
+  let geometryChanged = false;
   for (const pane of panes.values()) {
-    pane.term.options.fontFamily = next.fontFamily;
-    pane.term.options.fontSize = next.fontSize;
-    pane.term.options.letterSpacing = next.letterSpacing;
-    pane.term.options.lineHeight = next.lineHeight;
-    pane.term.options.fontWeight = next.fontWeight;
-    pane.term.options.fontWeightBold = next.fontWeightBold;
-    pane.term.options.scrollback = next.scrollback;
-    pane.term.options.cursorBlink = next.cursorBlink;
+    const changes: ITerminalOptions = {};
+    for (const key of terminalSettingKeys) {
+      if (pane.term.options[key] === next[key]) continue;
+      Object.assign(changes, { [key]: next[key] });
+      if (key !== 'cursorBlink' && key !== 'scrollback') geometryChanged = true;
+    }
+    if (Object.keys(changes).length) pane.term.options = changes;
   }
-  renderTabBar();
-  fitVisible();
-  if (fontPopoverOpen) renderFontList();
+  if (geometryChanged) fitVisible();
 }
 
 // ---------------------------------------------------------------- enlaces
@@ -972,46 +941,6 @@ function beep(): void {
   }
 }
 
-const FOCUS_CHIMES: Record<FocusSound, {
-  notes: readonly number[];
-  step: number;
-  ring: number;
-  volume: number;
-  harmonic: number;
-}> = {
-  subtle: { notes: [523.25, 659.25], step: 0.19, ring: 0.43, volume: 0.025, harmonic: 0.004 },
-  warm: { notes: [392, 523.25, 659.25], step: 0.25, ring: 0.58, volume: 0.021, harmonic: 0.0035 },
-  long: { notes: [392, 493.88, 587.33, 783.99], step: 0.34, ring: 0.78, volume: 0.017, harmonic: 0.003 },
-};
-
-/** Melodía ascendente al terminar trabajo, descendente al terminar descanso. */
-function playFocusChime(completed: FocusPhase, sound: FocusSound): void {
-  try {
-    const context = prepareAudio();
-    const start = context.currentTime + 0.01;
-    const chime = FOCUS_CHIMES[sound];
-    const notes = completed === 'work' ? chime.notes : [...chime.notes].reverse();
-    for (const [index, note] of notes.entries()) {
-      const at = start + index * chime.step;
-      for (const [partial, volume] of [[1, chime.volume], [2, chime.harmonic]] as const) {
-        const osc = context.createOscillator();
-        const gain = context.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(note * partial, at);
-        osc.frequency.exponentialRampToValueAtTime(note * partial * 0.995, at + chime.ring);
-        gain.gain.setValueAtTime(0.0001, at);
-        gain.gain.exponentialRampToValueAtTime(volume, at + 0.025);
-        gain.gain.exponentialRampToValueAtTime(0.0001, at + chime.ring);
-        osc.connect(gain).connect(context.destination);
-        osc.start(at);
-        osc.stop(at + chime.ring + 0.01);
-      }
-    }
-  } catch {
-    // El cambio de fase sigue visible aunque el dispositivo no admita audio.
-  }
-}
-
 // ---------------------------------------------------------------- nombre de la terminal
 
 function leafOf(termId: string): { tab: TabState; leaf: ReturnType<typeof L.findLeaf> } | undefined {
@@ -1169,7 +1098,7 @@ function restoreTerminal(pane: Pane, snapshot: TerminalSnapshot): void {
       if (panes.get(pane.termId) !== pane || pane.restoreGeneration !== generation) return;
       pane.restoring = false;
       pane.started = true;
-      pane.term.options.disableStdin = false;
+      pane.term.options.disableStdin = !!pane.profileSwitching;
       const pending = pane.restorePending.splice(0);
       for (const data of pending) writeKeepingView(pane, data);
       if (pending.length) schedulePrefill(pane);
@@ -1497,15 +1426,6 @@ window.addEventListener(
       ev.stopPropagation();
       openUsageId = null;
       renderUsagePopover();
-    } else if (focusPopoverOpen) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      setFocusPopover(false);
-    } else if (fontPopoverOpen) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      setFontPopover(false);
-      if (!gitActive) activePane()?.term.focus();
     }
   },
   true,
@@ -1795,12 +1715,6 @@ function renderTabBar(scrollTabId?: string): void {
   openGit.classList.add('tab-git-action');
   openGit.setAttribute('aria-label', openGit.title);
   openGit.disabled = gitActive;
-  const focus = iconButton(ICONS.timer, 'Configurar temporizador de enfoque', () => setFocusPopover(!focusPopoverOpen));
-  focus.classList.add('tab-focus');
-  focus.classList.toggle('active', focusTimer.enabled);
-  focus.setAttribute('aria-label', focus.title);
-  focus.setAttribute('aria-controls', 'focus-popover');
-  focus.setAttribute('aria-expanded', String(focusPopoverOpen));
   const notifications = iconButton(
     settings.notificationsEnabled ? ICONS.bell : ICONS.bellOff,
     settings.notificationsEnabled ? 'Desactivar notificaciones' : 'Activar notificaciones',
@@ -1809,13 +1723,7 @@ function renderTabBar(scrollTabId?: string): void {
   notifications.classList.add('tab-notifications');
   notifications.setAttribute('aria-label', notifications.title);
   notifications.setAttribute('aria-pressed', String(settings.notificationsEnabled));
-  const font = iconButton(ICONS.font, 'Tipografía de la terminal', () => setFontPopover(!fontPopoverOpen));
-  font.classList.add('tab-font');
-  font.classList.toggle('active', !!settings.customFontFamily || !!settings.customFontSize);
-  font.setAttribute('aria-label', font.title);
-  font.setAttribute('aria-controls', 'font-popover');
-  font.setAttribute('aria-expanded', String(fontPopoverOpen));
-  actions.append(add, openGit, focus, font, notifications);
+  actions.append(add, openGit, notifications);
   (scrollTabId ? tabs.querySelector<HTMLElement>(`.tab[data-tab-id="${scrollTabId}"]`) : tabs.querySelector('.active'))
     ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
@@ -1981,8 +1889,6 @@ function activateGit(): void {
   contentEl.hidden = true;
   gitEl.hidden = false;
   gitEl.classList.add('git-entering');
-  setFocusPopover(false);
-  setFontPopover(false);
   updateBottomBarVisibility();
   renderTabBar();
   post({ type: 'git', message: { type: 'refresh' } });
@@ -2226,220 +2132,14 @@ function handleKey(pane: Pane, ev: KeyboardEvent): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------- temporizador de enfoque
+// ---------------------------------------------------------------- barra de uso
 
 function updateBottomBarVisibility(): void {
-  bottomBarEl.hidden = gitActive || (!showUsage && !focusTimer.enabled);
+  const hidden = gitActive || !showUsage;
+  if (bottomBarEl.hidden === hidden) return;
+  bottomBarEl.hidden = hidden;
+  fitVisible();
 }
-
-function setFocusPopover(open: boolean, anchor: 'top' | 'bottom' = 'top'): void {
-  focusPopoverOpen = open;
-  focusPopoverEl.hidden = !open;
-  focusPopoverEl.classList.toggle('from-bottom', open && anchor === 'bottom');
-  tabbarEl.querySelector('.tab-focus')?.setAttribute('aria-expanded', String(open));
-  focusStatusEl.setAttribute('aria-expanded', String(open));
-  if (!open) return;
-  openUsageId = null;
-  renderUsagePopover();
-  if (fontPopoverOpen) setFontPopover(false);
-  focusWorkEl.value = String(focusTimer.workMinutes);
-  focusBreakEl.value = String(focusTimer.breakMinutes);
-  focusSoundEl.value = focusTimer.sound;
-  if (focusTimer.enabled) {
-    try { prepareAudio(); } catch { /* El panel puede funcionar sin audio. */ }
-  }
-  updateFocusActions();
-  focusWorkEl.focus();
-}
-
-// ---------------------------------------------------------------- tipografía
-
-let fontPopoverOpen = false;
-/** Vienen dentro de la extensión (assets/fonts, licencia OFL): siempre disponibles. */
-const BUNDLED_FONTS = ['Fira Code', 'JetBrains Mono'];
-/** Familias monoespaciadas habituales; solo se listan las que estén instaladas. */
-const FONT_CANDIDATES = [
-  'MesloLGM Nerd Font', 'MesloLGS Nerd Font', 'MesloLGM Nerd Font Mono', 'JetBrainsMono Nerd Font', 'JetBrainsMono Nerd Font Mono',
-  'FiraCode Nerd Font', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font', 'CaskaydiaCove Nerd Font Mono', 'Hack Nerd Font',
-  'Hack Nerd Font Mono', 'SauceCodePro Nerd Font', 'UbuntuMono Nerd Font', 'DejaVuSansM Nerd Font', 'RobotoMono Nerd Font',
-  'Iosevka Nerd Font', '0xProto Nerd Font', 'GeistMono Nerd Font', 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Source Code Pro',
-  'Hack', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Menlo', 'Monaco', 'SF Mono', 'Iosevka', 'Victor Mono', 'IBM Plex Mono', 'Roboto Mono',
-  'Geist Mono', 'Courier New',
-];
-const fontAvailability = new Map<string, boolean>();
-
-/**
- * Un webview no puede enumerar las fuentes del sistema, pero sí medir: si un
- * texto cambia de ancho al pedir la familia con distintas alternativas, la
- * familia existe. Comparar contra serif y sans-serif evita el falso negativo
- * de dos monoespaciadas con el mismo avance.
- */
-function fontAvailable(family: string): boolean {
-  if (BUNDLED_FONTS.includes(family)) return true;
-  const cached = fontAvailability.get(family);
-  if (cached !== undefined) return cached;
-  const context = document.createElement('canvas').getContext('2d');
-  if (!context) return false;
-  const sample = 'mmmmmmmmmmlliI1|{}[]=>~@';
-  const differs = (fallback: string): boolean => {
-    context.font = `72px ${fallback}`;
-    const base = context.measureText(sample).width;
-    context.font = `72px "${family.replace(/"/g, '')}", ${fallback}`;
-    return context.measureText(sample).width !== base;
-  };
-  const available = differs('serif') || differs('sans-serif') || differs('monospace');
-  fontAvailability.set(family, available);
-  return available;
-}
-
-function setFontPopover(open: boolean): void {
-  fontPopoverOpen = open;
-  fontPopoverEl.hidden = !open;
-  tabbarEl.querySelector('.tab-font')?.setAttribute('aria-expanded', String(open));
-  if (!open) return;
-  setFocusPopover(false);
-  openUsageId = null;
-  renderUsagePopover();
-  renderFontList();
-  fontListEl.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
-}
-
-function chooseFont(fontFamily: string): void {
-  post({ type: 'setFont', fontFamily });
-  settings = { ...settings, customFontFamily: fontFamily, fontFamily: fontFamily || settings.inheritedFontFamily };
-  renderFontList();
-}
-
-function renderFontList(): void {
-  const current = settings.customFontFamily;
-  const entries: { family: string; label: string; tag: string }[] = [
-    { family: '', label: 'Igual que VS Code', tag: settings.inheritedFontFamily },
-  ];
-  if (current && !BUNDLED_FONTS.includes(current) && !FONT_CANDIDATES.includes(current)) {
-    entries.push({ family: current, label: current, tag: 'actual' });
-  }
-  for (const family of BUNDLED_FONTS) entries.push({ family, label: family, tag: 'incluida' });
-  for (const family of FONT_CANDIDATES) {
-    if (fontAvailable(family)) entries.push({ family, label: family, tag: /nerd font/i.test(family) ? 'Nerd Font · iconos' : 'instalada' });
-  }
-  fontListEl.replaceChildren(...entries.map(entry => {
-    const option = document.createElement('button');
-    option.type = 'button';
-    option.className = 'font-option';
-    option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', String(entry.family === current));
-    option.style.fontFamily = entry.family ? `"${entry.family.replace(/"/g, '')}"` : settings.inheritedFontFamily;
-    const name = document.createElement('span');
-    name.className = 'font-option-name';
-    name.textContent = entry.label;
-    const sample = document.createElement('span');
-    sample.className = 'font-option-sample';
-    sample.textContent = 'Aa 0O il1 {} -> => ~/src';
-    const tag = document.createElement('span');
-    tag.className = 'font-option-tag';
-    tag.textContent = entry.tag;
-    option.append(name, sample, tag);
-    option.addEventListener('click', () => chooseFont(entry.family));
-    return option;
-  }));
-  fontSizeValueEl.textContent = String(settings.fontSize);
-  fontResetEl.disabled = !current && !settings.customFontSize;
-}
-
-fontCustomFormEl.addEventListener('submit', ev => {
-  ev.preventDefault();
-  const family = fontCustomEl.value.trim();
-  if (!family) return;
-  fontCustomEl.value = '';
-  chooseFont(family);
-});
-const stepFontSize = (delta: number): void => {
-  const size = Math.min(40, Math.max(6, settings.fontSize + delta));
-  post({ type: 'setFont', fontSize: size });
-  settings = { ...settings, fontSize: size, customFontSize: size };
-  fontSizeValueEl.textContent = String(size);
-  fontResetEl.disabled = false;
-};
-fontSizeMinusEl.addEventListener('click', () => stepFontSize(-1));
-fontSizePlusEl.addEventListener('click', () => stepFontSize(1));
-fontResetEl.addEventListener('click', () => {
-  post({ type: 'setFont', fontFamily: '', fontSize: 0 });
-  settings = { ...settings, customFontFamily: '', fontFamily: settings.inheritedFontFamily, customFontSize: 0, fontSize: settings.inheritedFontSize };
-  renderFontList();
-});
-// Cargar las incluidas desde el principio: así el primer render con ellas ya sale bien.
-for (const family of BUNDLED_FONTS) void document.fonts.load(`12px "${family}"`).catch(() => undefined);
-
-function updateFocusActions(): void {
-  focusSaveEl.textContent = focusTimer.enabled ? 'Guardar ajustes' : 'Iniciar';
-  focusActionsEl.hidden = !focusTimer.enabled;
-  focusToggleEl.textContent = focusTimer.running ? 'Pausar' : 'Reanudar';
-  focusHintEl.textContent = !focusTimer.enabled
-    ? 'Los bloques de trabajo y descanso se alternan automáticamente.'
-    : focusTimer.running
-      ? 'Los cambios de duración se aplican al siguiente bloque.'
-      : 'En pausa. Al guardar, el bloque actual toma la nueva duración.';
-}
-
-function renderFocus(next: FocusTimerState, now: number): void {
-  const enabledChanged = focusTimer.enabled !== next.enabled;
-  focusTimer = next;
-  focusEl.hidden = !next.enabled;
-  updateBottomBarVisibility();
-  if (enabledChanged) {
-    renderTabBar();
-    fitVisible();
-  }
-  if (!next.enabled) {
-    if (focusPopoverOpen) updateFocusActions();
-    return;
-  }
-  const seconds = Math.max(0, Math.ceil((next.running && next.endsAt !== null ? next.endsAt - now : next.remainingMs) / 1000));
-  const time = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-  const phase = next.phase === 'work' ? 'Trabajo' : 'Descanso';
-  focusEl.classList.toggle('break', next.phase === 'break');
-  focusEl.classList.toggle('paused', !next.running);
-  focusPhaseEl.textContent = next.running ? phase : `${phase} en pausa`;
-  focusTimeEl.textContent = time;
-  focusStatusEl.setAttribute('aria-label', `${phase}${next.running ? '' : ' en pausa'}, ${time} restantes. Abrir temporizador`);
-  focusPauseEl.innerHTML = next.running ? ICONS.pause : ICONS.play;
-  focusPauseEl.setAttribute('aria-label', next.running ? 'Pausar temporizador' : 'Reanudar temporizador');
-  focusPauseEl.title = focusPauseEl.getAttribute('aria-label') ?? '';
-  if (focusPopoverOpen) updateFocusActions();
-}
-
-focusFormEl.addEventListener('submit', ev => {
-  ev.preventDefault();
-  if (!focusFormEl.reportValidity()) return;
-  if (!focusTimer.enabled) {
-    try { prepareAudio(); } catch { /* El temporizador puede funcionar sin audio. */ }
-  }
-  const workMinutes = Number(focusWorkEl.value);
-  const breakMinutes = Number(focusBreakEl.value);
-  const sound = validFocusSound(focusSoundEl.value) ? focusSoundEl.value : focusTimer.sound;
-  post({ type: 'focusTimer', action: focusTimer.enabled ? 'configure' : 'start', workMinutes, breakMinutes, sound });
-  setFocusPopover(false);
-});
-focusStatusEl.addEventListener('click', () => setFocusPopover(!focusPopoverOpen, 'bottom'));
-function toggleFocusPlayback(): void {
-  if (!focusTimer.running) {
-    try { prepareAudio(); } catch { /* El temporizador puede funcionar sin audio. */ }
-  }
-  post({ type: 'focusTimer', action: focusTimer.running ? 'pause' : 'resume' });
-}
-focusPauseEl.addEventListener('click', toggleFocusPlayback);
-focusToggleEl.addEventListener('click', toggleFocusPlayback);
-focusSkipEl.addEventListener('click', () => post({ type: 'focusTimer', action: 'skip' }));
-focusPreviewEl.addEventListener('click', () => {
-  const sound = validFocusSound(focusSoundEl.value) ? focusSoundEl.value : focusTimer.sound;
-  playFocusChime('work', sound);
-});
-focusStopEl.addEventListener('click', () => {
-  post({ type: 'focusTimer', action: 'stop' });
-  setFocusPopover(false);
-});
-
-// ---------------------------------------------------------------- barra de uso
 
 let showUsage = true;
 let usageSnapshot: UsageSnapshot | null = null;
@@ -2459,7 +2159,6 @@ function renderUsage(snapshot: UsageSnapshot | null): void {
     usageEl.hidden = true;
     usageEl.replaceChildren();
     updateBottomBarVisibility();
-    fitVisible();
     return;
   }
   // Reservar el espacio desde el inicio evita que la primera lectura cambie
@@ -2480,7 +2179,6 @@ function renderUsage(snapshot: UsageSnapshot | null): void {
   if (focusedProvider) usageEl.querySelector<HTMLButtonElement>(`[data-provider="${focusedProvider}"]`)?.focus({ preventScroll: true });
   else if (focusedRefresh) usageEl.querySelector<HTMLButtonElement>('.usage-refresh')?.focus({ preventScroll: true });
   renderUsagePopover();
-  fitVisible();
 }
 
 function renderUsageItem(item: UsageItem): HTMLButtonElement {
@@ -2559,7 +2257,6 @@ function renderUsageItem(item: UsageItem): HTMLButtonElement {
 
   updateUsageReset(el, item);
   el.addEventListener('click', () => {
-    if (focusPopoverOpen) setFocusPopover(false);
     openUsageId = openUsageId === item.id ? null : item.id;
     renderUsagePopover();
   });
@@ -2708,10 +2405,6 @@ function usageTooltip(item: UsageItem): string {
 
 document.addEventListener('mousedown', ev => {
   const target = ev.target as HTMLElement;
-  if (focusPopoverOpen && !focusPopoverEl.contains(target) && !focusEl.contains(target) && !target.closest('.tab-focus')) {
-    setFocusPopover(false);
-  }
-  if (fontPopoverOpen && !fontPopoverEl.contains(target) && !target.closest('.tab-font')) setFontPopover(false);
   if (!openUsageId) return;
   if (usagePopoverEl.contains(target) || usageEl.contains(target)) return;
   openUsageId = null;
@@ -2725,7 +2418,6 @@ async function onInit(msg: Extract<HostMessage, { type: 'init' }>): Promise<void
   await applySettings(msg.settings);
   showUsage = msg.showUsage;
   renderUsage(usageSnapshot);
-  renderFocus(msg.focusTimer, Date.now());
   const alive = new Set(msg.alive);
   const exited = new Set(msg.exited);
 
@@ -2822,6 +2514,23 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       closePane(msg.termId, true);
       updateBoot();
       break;
+    case 'profileSwitch': {
+      const pane = panes.get(msg.termId);
+      if (!pane) break;
+      pane.profileSwitching = msg.status.blockInput === true;
+      pane.term.options.disableStdin = pane.profileSwitching || pane.restoring;
+      let notice = pane.el.querySelector<HTMLElement>('.profile-switch-notice');
+      if (!notice) {
+        notice = document.createElement('span');
+        notice.className = 'profile-switch-notice';
+        notice.setAttribute('role', 'status');
+        pane.titleEl.after(notice);
+      }
+      notice.hidden = msg.status.state === 'ready';
+      notice.title = msg.status.message;
+      notice.textContent = msg.status.state === 'waiting' ? 'Cambio pendiente' : msg.status.state === 'switching' ? 'Cambiando cuenta…' : 'Revisar cuenta';
+      break;
+    }
     case 'spawnError': {
       const pane = panes.get(msg.termId);
       pane?.term.write(`\r\n\x1b[31mNo se pudo iniciar el shell: ${msg.message}\x1b[0m\r\n`, () => markBootReady(msg.termId));
@@ -2840,12 +2549,6 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
     case 'usage':
       showUsage = msg.showUsage;
       renderUsage(msg.usage);
-      break;
-    case 'focusTimer':
-      renderFocus(msg.timer, msg.now);
-      if (msg.completedPhase && Date.now() >= msg.now && Date.now() - msg.now < 3_000) {
-        playFocusChime(msg.completedPhase, msg.timer.sound);
-      }
       break;
     case 'branch':
       setBranch(msg.termId, msg.branch, msg.detached, msg.cwd);
