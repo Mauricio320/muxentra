@@ -82,6 +82,8 @@ export interface TermSettings {
   notificationsEnabled: boolean;
   /** Saludo de apertura al abrir el panel; apagado, el espacio aparece directo. */
   openingAnimation: boolean;
+  /** Tamaño máximo, en bytes, de un archivo soltado sobre una terminal. */
+  filePasteMaxBytes: number;
 }
 
 export type TerminalFontWeight =
@@ -161,6 +163,19 @@ export type MuxentraCommand =
   /** Va a la terminal cuyo id llega en `arg`; sin arg, a la primera que pide atención. */
   | 'focusTerm';
 
+/**
+ * Algo que el usuario soltó sobre una terminal. Arrastrar desde el explorador
+ * de VS Code trae el URI del archivo; arrastrar desde el explorador del sistema
+ * solo deja su contenido, porque el webview no ve rutas del disco.
+ */
+export type DropItem =
+  | { kind: 'uri'; uri: string }
+  | { kind: 'file'; name: string; base64: string }
+  /** Pasa del límite de tamaño: no se manda el contenido, solo el aviso. */
+  | { kind: 'tooBig'; name: string; size: number }
+  /** El webview no pudo leerlo (una carpeta, por ejemplo). */
+  | { kind: 'failed'; name: string };
+
 /** Mensajes que envía el webview al extension host. */
 export type WebviewMessage =
   | { type: 'ready' }
@@ -176,6 +191,10 @@ export type WebviewMessage =
   /** Enlace que el usuario abrió con Ctrl/Cmd + clic en una terminal. */
   | { type: 'openLink'; url: string }
   | { type: 'refreshUsage' }
+  /** Archivos soltados sobre una terminal; el host devuelve sus rutas con `insert`. */
+  | { type: 'drop'; termId: string; items: DropItem[] }
+  /** Texto soltado sobre una terminal (una selección arrastrada desde el editor). */
+  | { type: 'dropText'; termId: string; text: string }
   /** Activa o silencia los avisos de Muxentra desde la barra del panel. */
   | { type: 'setNotifications'; enabled: boolean }
   /** Directorio que reportó el shell (OSC 7, OSC 9;9 o el título). */
@@ -214,4 +233,6 @@ export type HostMessage =
   /** Rama de la terminal; branch null cuando el directorio no está en un repositorio. */
   | { type: 'branch'; termId: string; branch: string | null; detached: boolean; cwd: string | null }
   | { type: 'command'; command: MuxentraCommand; arg?: string }
+  /** Escribe `text` en una terminal concreta, aunque el foco se haya movido. */
+  | { type: 'insert'; termId: string; text: string }
   | { type: 'git'; message: GitHostMessage };

@@ -3,14 +3,18 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AgentHomes } from './agentHomes';
+import { attachBytes, attachLimitBytes, attachPath } from './attachedFile';
 import { currentAgentHomes } from './environment';
 import { ClaudeProfileSwitch } from './claudeProfileSwitch';
 import { normalizeCwd, readGitInfo } from './git';
 import { GitExplorer } from './gitExplorer';
 import { GitController } from './gitPanel';
 import { bootScreen } from './brand';
+import { confirmPaste } from './pasteGuard';
+import { quotePath } from './projectFiles';
 import { log } from './log';
 import type {
+  DropItem,
   HostMessage,
   MuxentraCommand,
   PaneActivity,
@@ -520,6 +524,12 @@ export class MuxentraPanel {
       case 'openLink':
         openExternalLink(m.url);
         break;
+      case 'drop':
+        await this.onDrop(m.termId, m.items);
+        break;
+      case 'dropText':
+        if (await confirmPaste(m.text)) this.post({ type: 'insert', termId: m.termId, text: m.text });
+        break;
       case 'refreshUsage':
         this.sendUsage(true);
         break;
@@ -583,6 +593,44 @@ export class MuxentraPanel {
       this.post({ type: 'data', termId, data: chunks.join('') });
     }
     this.pending.clear();
+  }
+
+  /**
+   * Resuelve lo que se soltó sobre una terminal a rutas del proyecto y las
+   * escribe en su prompt. Lo que falle se cuenta junto al final, para no
+   * encadenar avisos cuando se sueltan varios archivos a la vez.
+   */
+  private async onDrop(termId: string, items: DropItem[]): Promise<void> {
+    const paths: string[] = [];
+    const problems: string[] = [];
+    const limitMb = Math.round(attachLimitBytes() / (1024 * 1024));
+
+    for (const item of items) {
+      try {
+        if (item.kind === 'uri') {
+          const uri = vscode.Uri.parse(item.uri);
+          if (uri.scheme !== 'file') {
+            problems.push(`${item.uri} no es un archivo del disco`);
+            continue;
+          }
+          paths.push(attachPath(uri.fsPath).relative);
+        } else if (item.kind === 'file') {
+          paths.push(attachBytes(item.name, Buffer.from(item.base64, 'base64')).relative);
+        } else if (item.kind === 'tooBig') {
+          problems.push(`${item.name} pesa más de ${limitMb} MB`);
+        } else {
+          problems.push(`no se pudo leer ${item.name}`);
+        }
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    if (paths.length) {
+      log().info(`soltados en la terminal: ${paths.join(', ')}`);
+      this.post({ type: 'insert', termId, text: `${paths.map(quotePath).join(' ')} ` });
+    }
+    if (problems.length) void vscode.window.showWarningMessage(`Muxentra: ${problems.join('; ')}`);
   }
 
   private post(message: HostMessage): void {
@@ -692,6 +740,7 @@ export function currentSettings(): TermSettings {
     attentionSound: cfg.get<boolean>('attentionSound') ?? false,
     notificationsEnabled: (cfg.get<string>('notifyOn') ?? 'all') !== 'none',
     openingAnimation: cfg.get<boolean>('openingAnimation') ?? true,
+    filePasteMaxBytes: attachLimitBytes(),
   };
 }
 

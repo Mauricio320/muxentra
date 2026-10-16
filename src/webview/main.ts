@@ -8,6 +8,7 @@ import { formatReset, preferredUsageReset } from './usageReset';
 import { findLinks, linkUrl } from './links';
 import { mountGitView } from '../gitView/main';
 import type {
+  DropItem,
   HostMessage,
   LayoutNode,
   MuxentraCommand,
@@ -165,6 +166,7 @@ let settings: TermSettings = {
   attentionSound: false,
   notificationsEnabled: true,
   openingAnimation: true,
+  filePasteMaxBytes: 10 * 1024 * 1024,
 };
 let theme: ITheme = buildTheme();
 
@@ -2083,6 +2085,137 @@ function runCommand(command: MuxentraCommand, arg?: string): void {
   }
 }
 
+// ---------------------------------------------------------------- archivos soltados
+
+/**
+ * Soltar un archivo sobre una terminal escribe su ruta en el prompt, que es lo
+ * que sabe leer un agente que corre dentro. Arrastrado desde el explorador de
+ * VS Code llega el URI del archivo; desde el explorador del sistema solo llega
+ * su contenido, porque el webview no ve rutas del disco, y el host lo copia al
+ * proyecto antes de responder con la ruta.
+ */
+let dropHighlight: HTMLElement | undefined;
+
+function dropPaneAt(x: number, y: number): HTMLElement | undefined {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  return (el?.closest('.pane') as HTMLElement | null) ?? undefined;
+}
+
+function highlightDrop(el: HTMLElement | undefined): void {
+  if (dropHighlight === el) return;
+  dropHighlight?.classList.remove('file-drop');
+  dropHighlight = el;
+  dropHighlight?.classList.add('file-drop');
+}
+
+/** El arrastre trae algo aprovechable: un archivo o un texto. */
+function droppable(dt: DataTransfer | null): dt is DataTransfer {
+  if (!dt) return false;
+  return Array.from(dt.types).some(
+    type => type === 'Files' || type === 'text/uri-list' || type === 'resourceurls' || type === 'text/plain',
+  );
+}
+
+function fileUris(raw: Iterable<string>): string[] {
+  const out: string[] = [];
+  for (const line of raw) {
+    const value = line.trim();
+    if (value.startsWith('file:') && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+/** Arrastre interno de VS Code: trae los URI de lo soltado, y son rutas reales. */
+function resourceUris(dt: DataTransfer): string[] {
+  try {
+    const resources = dt.getData('resourceurls');
+    return resources ? fileUris(JSON.parse(resources) as string[]) : [];
+  } catch {
+    // No venía como JSON.
+    return [];
+  }
+}
+
+/** La lista estándar del arrastre, que puede traer también direcciones web. */
+function uriListUris(dt: DataTransfer): string[] {
+  return fileUris(dt.getData('text/uri-list').split(/\r?\n/).filter(line => !line.startsWith('#')));
+}
+
+/** String.fromCharCode se queda sin pila con un arreglo entero, así que va por tramos. */
+const BASE64_CHUNK = 0x8000;
+
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += BASE64_CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_CHUNK));
+  }
+  return btoa(binary);
+}
+
+async function sendDroppedFiles(termId: string, files: File[]): Promise<void> {
+  const items: DropItem[] = [];
+  for (const file of files) {
+    if (file.size > settings.filePasteMaxBytes) {
+      items.push({ kind: 'tooBig', name: file.name, size: file.size });
+      continue;
+    }
+    try {
+      items.push({ kind: 'file', name: file.name, base64: toBase64(await file.arrayBuffer()) });
+    } catch {
+      // Una carpeta llega como un archivo vacío que no se deja leer.
+      items.push({ kind: 'failed', name: file.name });
+    }
+  }
+  if (items.length) post({ type: 'drop', termId, items });
+}
+
+window.addEventListener('dragover', ev => {
+  if (gitActive || !droppable(ev.dataTransfer)) return;
+  // Sin esto el webview abre el archivo en vez de dejarlo caer en la terminal.
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'copy';
+  highlightDrop(dropPaneAt(ev.clientX, ev.clientY));
+});
+
+for (const type of ['dragleave', 'dragend'] as const) {
+  window.addEventListener(type, () => highlightDrop(undefined));
+}
+
+window.addEventListener('drop', ev => {
+  const dt = ev.dataTransfer;
+  if (gitActive || !droppable(dt)) return;
+  ev.preventDefault();
+  highlightDrop(undefined);
+
+  const termId = dropPaneAt(ev.clientX, ev.clientY)?.dataset.termId ?? activeTab()?.activeTermId;
+  if (!termId || !panes.has(termId)) return;
+  focusPane(termId);
+
+  // Del explorador de VS Code se usa la ruta: el archivo ya está donde debe.
+  const resources = resourceUris(dt);
+  if (resources.length) {
+    post({ type: 'drop', termId, items: resources.map(uri => ({ kind: 'uri', uri })) });
+    return;
+  }
+  // Del explorador del sistema va el contenido. Chromium a veces añade un
+  // text/uri-list, pero puede apuntar a una copia temporal que ya no está, así
+  // que mandar los bytes es lo único que siempre funciona.
+  // dataTransfer se vacía al salir del manejador, así que la lista se copia ya.
+  const files = Array.from(dt.files);
+  if (files.length) {
+    void sendDroppedFiles(termId, files);
+    return;
+  }
+  const uris = uriListUris(dt);
+  if (uris.length) {
+    post({ type: 'drop', termId, items: uris.map(uri => ({ kind: 'uri', uri })) });
+    return;
+  }
+  const text = dt.getData('text/plain');
+  if (text) post({ type: 'dropText', termId, text });
+});
+
 // ---------------------------------------------------------------- teclado
 
 /** Teclas con Ctrl (Cmd en mac) que se dejan pasar a VS Code en vez de al shell. */
@@ -2556,6 +2689,16 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
     case 'command':
       void initPromise.then(() => runCommand(msg.command, msg.arg));
       break;
+    case 'insert': {
+      const pane = panes.get(msg.termId);
+      if (pane) {
+        const tab = tabOf(msg.termId);
+        if (tab && (gitActive || tab.id !== state.activeTabId)) activateTab(tab.id);
+        focusPane(msg.termId);
+        pane.term.paste(msg.text);
+      }
+      break;
+    }
   }
 });
 

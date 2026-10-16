@@ -2,7 +2,7 @@
   "name": "muxentra",
   "displayName": "Muxentra",
   "description": "Terminales, historial Git y consumo de IA en un solo espacio de trabajo para VS Code.",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "publisher": "mauriciotriana",
   "icon": "assets/muxentra-icon.png",
   "galleryBanner": {
@@ -359,6 +359,17 @@
           "minimum": 1,
           "description": "Cuántas imágenes pegadas se conservan. Al superar el límite se borran las más antiguas."
         },
+        "muxentra.filePasteDir": {
+          "type": "string",
+          "default": ".muxentra-files",
+          "description": "Carpeta, relativa a la raíz del workspace, donde se copian los archivos que se sueltan sobre una terminal y vienen de fuera del proyecto. Se ignora en .git/info/exclude, así que no llega al repositorio."
+        },
+        "muxentra.filePasteMaxMB": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Tamaño máximo, en MB, de un archivo soltado sobre una terminal. Los que lo superen se avisan en vez de copiarse."
+        },
         "muxentra.multiLinePasteWarning": {
           "type": "boolean",
           "default": true,
@@ -375,6 +386,7 @@
     "test:terminal": "node tools/terminal-regression.cjs",
     "test:git": "node tools/gitExplorer-regression.cjs",
     "test:panel": "node tools/panel-regression.cjs",
+    "test:attached": "node tools/attachedFile-regression.cjs",
     "test:recovery": "node tools/panelRecovery-regression.cjs",
     "test:profile-switch": "node tools/profileSwitch-regression.cjs",
     "test:webview": "node tools/webview-settings-regression.cjs",

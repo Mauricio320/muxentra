@@ -144,6 +144,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 - A compact bottom bar with Claude Code and OpenAI Codex usage: each provider card keeps all limit percentages and shows a reset countdown beside the matching percentage, on the same line. It prioritizes the current five-hour reset, falling back to the weekly reset when no current five-hour timestamp is available. Missing, expired or stale schedules show a dash with a "Reinicio pendiente" tooltip. Countdowns update every 30 seconds without polling providers or moving keyboard focus. Hover the countdown for the exact reset date and time, click a card for details, or use the refresh button to update usage.
 - Every terminal shows the git branch of the directory it sits in. It understands worktrees, so two terminals in different worktrees show different branches. On a detached HEAD it shows the short sha, highlighted.
 - `Ctrl+V` (`Cmd+V` on macOS) pastes images too: when the clipboard holds an image and no text, the image is saved into `.muxentra-img/` inside the project and its path is typed into the terminal, ready to hand to an agent. `Ctrl+Alt+V` (`Cmd+Alt+V`) does the same even when the clipboard also carries text.
+- Drop a file onto a terminal and its path is typed into the command line, ready to hand to an agent: the contract the front-end team just sent you, a log, a spec. Dragged from the VS Code explorer the file is referenced where it already lives; dragged from Explorer or Finder it is copied into `.muxentra-files/` inside the project first, because an agent cannot read outside the workspace without asking. Dropping selected text pastes the text.
 - Links in the output open in your browser with `Ctrl` + left click (`Cmd` + click on macOS), the same gesture as the integrated terminal. Hovering one underlines it; the hand cursor appears once the key is down, so a plain click still selects text as before. It finds `http://` and `https://` addresses, bare `www.` ones and the `OSC 8` hyperlinks that tools like `gh` or `npm` emit, and it follows a URL that wrapped across several lines. Only http and https are opened: `file://`, `vscode://` and the like are ignored on both sides of the webview.
 - Opening the panel creates a dedicated group on the right and locks it, so files keep opening in the main editor. The position survives a window restore. Unlock it with the VS Code padlock or with the `muxentra.lockEditorGroup` setting.
 - Tabs and their layout are saved per workspace.
@@ -168,6 +169,7 @@ Git shares Muxentra's editor panel: closing Muxentra also closes its Git view, w
 | Next / previous terminal | `Ctrl+Alt+→` / `Ctrl+Alt+←` | `Cmd+Alt+→` / `Cmd+Alt+←` |
 | Copy / paste | `Ctrl+Shift+C` / `Ctrl+Shift+V` (also `Ctrl+V`) | `Cmd+C` / `Cmd+V` |
 | Paste image from the clipboard | `Ctrl+V`, or `Ctrl+Alt+V` to force the image | `Cmd+V`, or `Cmd+Alt+V` |
+| Attach a file to a terminal | drag it onto the terminal | drag it onto the terminal |
 | Open a link from the output | `Ctrl` + left click | `Cmd` + click |
 
 "Muxentra: Igualar tamaño de terminales" and "Muxentra: Ir a la terminal que espera" live in the command palette with no default shortcut. Every shortcut can be changed in Keyboard Shortcuts (VS Code adapts them to your keyboard layout).
@@ -178,7 +180,7 @@ Closing the last terminal of a terminal tab closes that tab. Middle-clicking a t
 
 This is for handing a screenshot to an agent running in the terminal, such as Claude Code or Codex: they do not read the clipboard, but they do open a file path, and that is what this shortcut gives them.
 
-1. Copy the image. A screen clipping (`Win+Shift+S`), a "Copy image" from the browser, or a `.png` file copied from Explorer all work.
+1. Copy the image. A screen clipping (`Win+Shift+S`) or a "Copy image" from the browser both work. A file copied from Explorer works too, and is referenced like any other dropped file instead of being saved as a new image.
 2. Click the terminal you want it in.
 3. Press `Ctrl+V`, or `Cmd+V` on macOS. If the clipboard has text, that text is pasted instead; `Ctrl+Alt+V` (`Cmd+Alt+V`) always goes for the image.
 4. The path is typed into the command line, with a trailing space so you can keep writing:
@@ -203,6 +205,34 @@ Worth knowing:
 - How the clipboard is read: on Windows, with `System.Windows.Forms.Clipboard` from Windows PowerShell, the only one that runs in STA mode; on macOS, with AppleScript through `osascript`, which converts the clipboard to PNG and also understands a file copied in Finder. On Linux the shortcut says it is unavailable.
 - On Windows, `Ctrl+Alt` is AltGr on Spanish and Latin American keyboards, but AltGr+V types no character, so the shortcut costs you nothing: `@`, `{`, `}`, `[`, `]`, `|` and `~` still reach the terminal.
 
+## Dropping a file into the terminal
+
+Same idea as the image, for everything else: the contract the front-end team hands you, an OpenAPI spec, a log. Instead of opening the file, copying the code and pasting it into the prompt, drop the file on the terminal and the agent reads it from disk.
+
+1. Drag the file onto the terminal you want it in. The terminal that would get it is outlined while you drag.
+2. Drop it. The path is typed into the command line, with a trailing space so you can keep writing:
+
+   ```
+   .muxentra-files/pedido.contract.ts
+   ```
+
+3. Add your question next to it and hit Enter:
+
+   ```
+   .muxentra-files/pedido.contract.ts implement the client for this contract
+   ```
+
+Worth knowing:
+
+- Where the file comes from decides what happens. From the VS Code explorer, or any file already inside the project, it is referenced where it is: nothing is copied and you get `src/api/pedido.contract.ts`. From Explorer, Finder or an email client, the webview only receives the contents and not the path, so the file is copied into `.muxentra-files/` keeping its name.
+- The name is part of what the agent reads, so it is preserved. Dropping the same file twice reuses the copy already there; a different file with the same name becomes `pedido-2.ts`.
+- `.muxentra-files/` never reaches the repository: the folder is written into `.git/info/exclude`, a rule local to your clone. Unlike `.muxentra-img/`, nothing is pruned, so delete it when a contract stops being useful.
+- Several files at once work: all the paths are typed, space-separated, and a path with spaces comes out quoted.
+- Files over `muxentra.filePasteMaxMB` (10 MB by default) are not copied; a warning names them. Folders cannot be dropped from outside the project, though a folder already inside it is referenced like any other path.
+- Dragging selected text from an editor pastes the text instead, with the same multi-line confirmation as `Ctrl+V`.
+- Copying a file in Explorer or Finder and pressing `Ctrl+V` does the same thing as dropping it.
+
+
 ## Settings
 
 - `muxentra.shellPath` and `muxentra.shellArgs`: an explicit shell. Empty means your default VS Code profile.
@@ -222,6 +252,8 @@ Worth knowing:
 - `muxentra.usageRefreshSeconds`: how often usage is re-read while the panel is visible.
 - `muxentra.imagePasteDir`: folder for pasted images. Defaults to `.muxentra-img`. It has to stay inside the workspace.
 - `muxentra.imagePasteMax`: how many pasted images are kept. Defaults to 6.
+- `muxentra.filePasteDir`: folder where files dropped from outside the project are copied. Defaults to `.muxentra-files`. It has to stay inside the workspace.
+- `muxentra.filePasteMaxMB`: largest file that can be dropped onto a terminal. Defaults to 10.
 - `muxentra.multiLinePasteWarning`: ask for confirmation before pasting multi-line text. On by default.
 
 `muxentra.shellPath` and `muxentra.shellArgs` have `machine` scope: they are set per machine or per user, and a repository cannot change them from its `.vscode/settings.json`.
@@ -246,6 +278,7 @@ If switching profiles restarts the extension host but leaves a disconnected Muxe
 - **PowerShell refuses to run the script.** Download the `.vsix` from the release and install it with `code --install-extension`, which does exactly the same thing.
 - **Installed, but nothing shows up.** Reload the window (`Ctrl+Shift+P` > "Developer: Reload Window") and open the panel with `Ctrl+Alt+T`.
 - **The panel opens but no terminal starts.** Check the Output view, "Muxentra" channel: it says why the shell or the server failed.
+- **Dropping a file does nothing.** Drop it on the terminal area, not on the tab bar or the Git tab, and check the Output view, "Muxentra" channel. A file over `muxentra.filePasteMaxMB` is reported instead of copied.
 - **Pasting an image does nothing.** The clipboard holds no image (copy it again), or you are on Linux, where it is not supported. If `Ctrl+V` pastes text instead, the clipboard carries text alongside the image: use `Ctrl+Alt+V` (`Cmd+Alt+V` on macOS).
 - **Fresh shells started when I reopened VS Code.** The server shuts itself down after five minutes with no live terminals and no open panels; if nothing was running, that is expected.
 - **I cannot scroll up while Codex is answering.** Codex renders the answer it is writing inside its own area of the screen and only hands it to the terminal history once the turn is committed. Until then, press Ctrl+T inside Codex to open its transcript and scroll there; afterwards the plain mouse wheel scrolls the terminal history as usual. Do not hold Shift: in a webview that turns the wheel into a horizontal scroll and nothing moves.

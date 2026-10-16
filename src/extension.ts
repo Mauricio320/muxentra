@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
-import { saveClipboardImage } from './clipboardImage';
+import { saveClipboardAttachment } from './clipboardImage';
 import { installClaudeUsage } from './claudeUsageSetup';
 import { currentAgentHomes } from './environment';
 import { GitExplorer } from './gitExplorer';
 import { registerGitDocumentProvider } from './gitPanel';
 import { log } from './log';
 import { MuxentraPanel } from './panel';
+import { confirmPaste } from './pasteGuard';
 import { registerPanelRecovery } from './panelRecovery';
+import { quotePath } from './projectFiles';
 import type { MuxentraCommand } from './protocol';
 import { PtyClient } from './ptyClient';
 
@@ -89,17 +91,17 @@ export function activate(ctx: vscode.ExtensionContext): void {
     void vscode.window.showInformationMessage('Muxentra: ninguna terminal está esperando.');
   });
 
-  // Guarda la imagen del portapapeles en el proyecto y pega su ruta en la terminal.
-  const pasteImage = async (quietIfNone: boolean): Promise<void> => {
+  // Deja en el proyecto la imagen (o el archivo) del portapapeles y pega su ruta.
+  const pasteAttachment = async (quietIfNone: boolean): Promise<void> => {
     try {
-      const saved = await saveClipboardImage();
+      const saved = await saveClipboardAttachment();
       if (!saved) {
-        if (!quietIfNone) void vscode.window.showInformationMessage('Muxentra: no hay ninguna imagen en el portapapeles.');
+        if (!quietIfNone) void vscode.window.showInformationMessage('Muxentra: no hay ninguna imagen ni ningún archivo en el portapapeles.');
         return;
       }
-      log().info(`imagen pegada en ${saved.relative}`);
-      if (!MuxentraPanel.send('paste', `${saved.relative} `)) {
-        void vscode.window.showInformationMessage(`Muxentra: imagen guardada en ${saved.relative}`);
+      log().info(`${saved.kind === 'image' ? 'imagen pegada en' : 'archivo referenciado en'} ${saved.relative}`);
+      if (!MuxentraPanel.send('paste', `${quotePath(saved.relative)} `)) {
+        void vscode.window.showInformationMessage(`Muxentra: ${saved.relative}`);
       }
     } catch (err) {
       void vscode.window.showErrorMessage(`Muxentra: ${err instanceof Error ? err.message : String(err)}`);
@@ -107,18 +109,19 @@ export function activate(ctx: vscode.ExtensionContext): void {
   };
 
   // Ctrl+V pega texto si lo hay; si el portapapeles solo trae una imagen (una
-  // captura, "Copiar imagen" del navegador), la guarda y pega su ruta.
+  // captura, "Copiar imagen" del navegador) o un archivo copiado en el
+  // explorador, lo deja en el proyecto y pega su ruta.
   register('muxentra.paste', async () => {
     const text = await vscode.env.clipboard.readText();
     if (!text) {
-      await pasteImage(true);
+      await pasteAttachment(true);
       return;
     }
     if (!(await confirmPaste(text))) return;
     MuxentraPanel.send('paste', text);
   });
 
-  register('muxentra.pasteImage', () => pasteImage(false));
+  register('muxentra.pasteImage', () => pasteAttachment(false));
 
   register('muxentra.killAll', async () => {
     const answer = await vscode.window.showWarningMessage(
@@ -133,31 +136,6 @@ export function activate(ctx: vscode.ExtensionContext): void {
       void vscode.window.showErrorMessage(`Muxentra: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-}
-
-/**
- * Un texto de varias líneas se ejecuta solo al pegarlo, porque cada salto de
- * línea hace de Enter. Lo que hay en el portapapeles puede venir de una página
- * web que muestre un comando y copie otro, así que se enseña antes de soltarlo
- * en el shell. Es el mismo aviso que da la terminal de VS Code.
- */
-async function confirmPaste(text: string): Promise<boolean> {
-  if (!vscode.workspace.getConfiguration('muxentra').get<boolean>('multiLinePasteWarning', true)) return true;
-  const lines = text.replace(/\s+$/, '').split(/\r\n|\r|\n/);
-  if (lines.length < 2) return true;
-  const answer = await vscode.window.showWarningMessage(
-    `Vas a pegar ${lines.length} líneas en la terminal y se ejecutarán de inmediato.`,
-    { modal: true, detail: preview(lines) },
-    'Pegar',
-  );
-  return answer === 'Pegar';
-}
-
-function preview(lines: string[]): string {
-  const shown = lines.slice(0, 6).map(line => (line.length > 100 ? `${line.slice(0, 100)}…` : line));
-  const rest = lines.length - shown.length;
-  if (rest > 0) shown.push(`… y ${rest} ${rest === 1 ? 'línea más' : 'líneas más'}`);
-  return shown.join('\n');
 }
 
 export function deactivate(): void {

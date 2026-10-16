@@ -97,6 +97,7 @@ async function checkUsageRaces() {
     },
     './git': {}, './gitPanel': {}, './brand': {}, './ptyClient': {}, './log': { log: () => ({ warn() {} }) },
     './claudeProfileSwitch': {},
+    './attachedFile': { attachLimitBytes: () => 10 * 1024 * 1024 }, './pasteGuard': {}, './projectFiles': {},
   });
   const panel = Object.create(MuxentraPanel.prototype);
   Object.assign(panel, { panel: { visible: true }, claudeLivePending: false, claudeLiveAttemptAt: 0, post: message => posts.push(message) });

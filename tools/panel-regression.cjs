@@ -113,6 +113,7 @@ function branchChecks() {
     },
     './gitPanel': {}, './brand': {}, './ptyClient': {}, './usage': {}, './environment': {}, './log': log,
     './claudeProfileSwitch': {},
+    './attachedFile': { attachLimitBytes: () => 10 * 1024 * 1024 }, './pasteGuard': {}, './projectFiles': {},
   });
   const panel = Object.create(MuxentraPanel.prototype);
   Object.assign(panel, {
